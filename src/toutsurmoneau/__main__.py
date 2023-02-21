@@ -1,6 +1,7 @@
+import toutsurmoneau
 import argparse
 import sys
-import toutsurmoneau
+import datetime
 
 
 def command_line():
@@ -14,11 +15,14 @@ def command_line():
                         required=False, help='Counter Id')
     parser.add_argument('-P', '--provider',
                         required=False, help='Provider name')
+    parser.add_argument('-e', '--execute',
+                        required=False, help='Command to execute')
 
     args = parser.parse_args()
 
     client = toutsurmoneau.ToutSurMonEau(args.username, args.password,
                                          args.counter_id, args.provider, auto_close=False)
+    command=args.execute or 'attributes'
 
     try:
         client.update()
@@ -27,7 +31,19 @@ def command_line():
         return 1
     finally:
         client.close_session()
-    print(client.attributes)
+    if command == 'attributes':
+        data = client.attributes
+    elif command == 'contracts':
+        data = client.contracts()
+    elif command == 'total_volume':
+        data = client.total_volume()
+    elif command == 'monthly_recent':
+        data = client.monthly_recent()
+    elif command == 'daily_for_month':
+        data = client.daily_for_month(datetime.date.today())
+    else:
+        raise Exception('No such command: '+command)
+    print(data)
     return 0
 
 

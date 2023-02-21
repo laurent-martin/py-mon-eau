@@ -19,10 +19,12 @@ class ToutSurMonEau():
     API_ENDPOINT_MONTHLY = 'statMData'
     API_ENDPOINT_CONTRACT = 'donnees-contrats'
     SESSION_ID = 'eZSESSID'
+    # regex is before utf8 encoding
+    CSRF_TOKEN_REGEX = '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u0022'
     MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
               'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
-    def __init__(self, username, password, counter_id=None, provider=None, session=None, auto_close=None, timeout=None, use_litre=True):
+    def __init__(self, username, password, counter_id=None, provider=None, session=None, timeout=None, auto_close=None, use_litre=True, compatibility=True):
         """Initialize the client object.
         If counter_id is None, it will be read from the web.
         If provider is None, 'Suez' is used.
@@ -30,14 +32,19 @@ class ToutSurMonEau():
         Else auto_close default to False
         auto_close set to True/False overrides default behavior.
         """
+        self.attributes = {}
+        self.state = {}
         self._username = username
         self._password = password
         self._id = counter_id
         self._session = session
         self._timeout = timeout
-        self._use_litre = use_litre
-        self.attributes = {}
         self._cookies = None
+        self._compatibility = compatibility
+        if self._compatibility:
+            self._use_litre = True
+        else:
+            self._use_litre = use_litre
         if provider is None:
             provider = 'Suez'
         if auto_close is None:
@@ -83,7 +90,7 @@ class ToutSurMonEau():
             raise Exception('Clear cookie before asking update')
         # go to login page, retrieve token and login cookies
         csrf_token = self._find_in_page(
-            self.PAGE_LOGIN, '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u0022').encode('utf-8').decode('unicode-escape')
+            self.PAGE_LOGIN, self.CSRF_TOKEN_REGEX).encode('utf-8').decode('unicode-escape')
         # former regex: "_csrf_token" value="([^"]+)"
         login_cookies = self._cookies
         # reset cookies , as it is not yet the auth cookies
@@ -111,7 +118,7 @@ class ToutSurMonEau():
         self._cookies = {self.SESSION_ID: the_cookies[self.SESSION_ID]}
 
     def _counter_id(self) -> str:
-        if self._id is None:
+        if self._id is None or "".__eq__(self._id):
             if self._cookies is None:
                 self._generate_access_cookie()
             # Read counter ID
@@ -168,7 +175,7 @@ class ToutSurMonEau():
         h = {}
         result = {
             'monthly':                h,
-            'total_volume':           None,
+            'state':                  None,
             'highest_monthly_volume': monthly.pop(),
             'last_year_volume':       monthly.pop(),
             'this_year_volume':       monthly.pop()
@@ -185,7 +192,7 @@ class ToutSurMonEau():
             month = 1 + self.MONTHS.index(d[0])
             if year not in h:
                 h[year] = {}
-            result['total_volume'] = total_volume
+            result['state'] = total_volume
             h[year][month] = {
                 'month': self._convert_volume(i[1]),
                 'total': total_volume
@@ -193,7 +200,7 @@ class ToutSurMonEau():
         return result
 
     def total_volume(self) -> float | int:
-        return self.monthly_recent()['total_volume']
+        return self.monthly_recent()['state']
 
     def check_credentials(self):
         """Exception if credentials are not valid"""
@@ -201,12 +208,27 @@ class ToutSurMonEau():
 
     def update(self):
         """Return a summary of collected data."""
-        self.attributes['attribution'] = "Data provided by "+self._base_uri
-        self.attributes['contracts'] = self.contracts()
-        self.attributes['summary'] = self.monthly_recent()
-        self.attributes['this_month'] = self.daily_for_month(
-            datetime.date.today())
-        self.attributes['counter'] = self.attributes['summary']['total_volume']
+        if self._compatibility:
+            self.attributes['attribution'] = "Data provided by "+self._base_uri
+            summary = self.monthly_recent()
+            self.state = summary['state']
+            self.attributes['lastYearOverAll'] = summary['last_year_volume']
+            self.attributes['thisYearOverAll'] = summary['this_year_volume']
+            self.attributes['highestMonthlyConsumption'] = summary['highest_monthly_volume']
+            self.attributes['history'] = summary['monthly']
+            today = datetime.date.today()
+            self.attributes['thisMonthConsumption'] = self.daily_for_month(
+                today)
+            self.attributes['previousMonthConsumption'] = self.daily_for_month(
+                datetime.date(today.year, today.month - 1, 1))
+        else:
+            self.attributes['attribution'] = "Data provided by "+self._base_uri
+            self.attributes['contracts'] = self.contracts()
+            self.attributes['summary'] = self.monthly_recent()
+            self.attributes['this_month'] = self.daily_for_month(
+                datetime.date.today())
+            self.state = self.attributes['summary']['state']
+        return self.attributes
 
     def close_session(self):
         """Close current session."""
