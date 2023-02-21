@@ -49,21 +49,7 @@ class ToutSurMonEau():
             self._auto_close = auto_close
         self._base_uri = self.BASE_URIS[provider]
         if self._base_uri is None:
-            raise Exception('Not a valid provider')
-
-    def check_credentials(self):
-        """Exception if credentials are not valid"""
-        self.contracts()
-
-    def update(self):
-        """Return the latest collected data from Linky."""
-        self.attributes = self.contracts()
-
-    def close_session(self):
-        """Close current session."""
-        if self._session is not None:
-            self._session.close()
-            self._session = None
+            self._base_uri = provider
 
     def _session_get(self, endpoint, cookies=None):
         """Call GET on specified endpoint (path)"""
@@ -175,19 +161,19 @@ class ToutSurMonEau():
                     i[0], '%d/%m/%Y').day] = {'day': i[1], 'total': i[2]}
         return result
 
-    # self._returns [Hash]
+    # @return [Hash] current month
     def monthly_recent(self) -> dict:
         monthly = self._call_api(
             self.API_ENDPOINT_MONTHLY + '/' + self._counter_id())
         h = {}
         result = {
-            'history':                h,
+            'monthly':                h,
             'total_volume':           None,
             'highest_monthly_volume': monthly.pop(),
             'last_year_volume':       monthly.pop(),
             'this_year_volume':       monthly.pop()
         }
-        # fill history by year and month
+        # fill monthly by year and month
         for i in monthly:
             total_volume = self._convert_volume(i[2])
             # skip futures
@@ -208,3 +194,22 @@ class ToutSurMonEau():
 
     def total_volume(self) -> float | int:
         return self.monthly_recent()['total_volume']
+
+    def check_credentials(self):
+        """Exception if credentials are not valid"""
+        self.contracts()
+
+    def update(self):
+        """Return a summary of collected data."""
+        self.attributes['attribution'] = "Data provided by "+self._base_uri
+        self.attributes['contracts'] = self.contracts()
+        self.attributes['summary'] = self.monthly_recent()
+        self.attributes['this_month'] = self.daily_for_month(
+            datetime.date.today())
+        self.attributes['counter'] = self.attributes['summary']['total_volume']
+
+    def close_session(self):
+        """Close current session."""
+        if self._session is not None:
+            self._session.close()
+            self._session = None

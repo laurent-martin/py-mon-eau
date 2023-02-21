@@ -18,7 +18,7 @@ def command_line():
     args = parser.parse_args()
 
     client = toutsurmoneau.ToutSurMonEau(args.username, args.password,
-                                         args.counter_id, args.provider)
+                                         args.counter_id, args.provider, auto_close=False)
 
     try:
         client.update()
