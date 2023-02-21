@@ -165,7 +165,7 @@ class ToutSurMonEau():
         for i in daily:
             if i[2] != 0:
                 result[datetime.datetime.strptime(
-                    i[0], '%d/%m/%Y').day] = {'day': i[1], 'total': i[2]}
+                    i[0], '%d/%m/%Y').day] = {'day': self._convert_volume(i[1]), 'total': self._convert_volume(i[2])}
         return result
 
     # @return [Hash] current month
@@ -180,11 +180,10 @@ class ToutSurMonEau():
             'last_year_volume':       monthly.pop(),
             'this_year_volume':       monthly.pop()
         }
-        # fill monthly by year and month
+        # fill monthly by year and month, we assume values are in date order
         for i in monthly:
-            total_volume = self._convert_volume(i[2])
-            # skip futures
-            if total_volume == 0:
+            # skip values in the future... (counter value is set to zero if there is no reading for future values)
+            if int(i[2]) == 0:
                 next
             # date is Month Year
             d = i[3].split(' ')
@@ -192,10 +191,9 @@ class ToutSurMonEau():
             month = 1 + self.MONTHS.index(d[0])
             if year not in h:
                 h[year] = {}
-            result['state'] = total_volume
             h[year][month] = {
                 'month': self._convert_volume(i[1]),
-                'total': total_volume
+                'total': self._convert_volume(i[2])
             }
         return result
 
@@ -212,26 +210,28 @@ class ToutSurMonEau():
 
     def update(self):
         """Return a summary of collected data."""
+        today = datetime.date.today()
+        yesterday = today - datetime.timedelta(days=1)
         if self._compatibility:
             self.attributes['attribution'] = "Data provided by "+self._base_uri
             summary = self.monthly_recent()
-            self.state = summary['state']
             self.attributes['lastYearOverAll'] = summary['last_year_volume']
             self.attributes['thisYearOverAll'] = summary['this_year_volume']
             self.attributes['highestMonthlyConsumption'] = summary['highest_monthly_volume']
             self.attributes['history'] = summary['monthly']
-            today = datetime.date.today()
             self.attributes['thisMonthConsumption'] = self.daily_for_month(
                 today)
             self.attributes['previousMonthConsumption'] = self.daily_for_month(
                 datetime.date(today.year, today.month - 1, 1))
+            self.state = self.daily_for_month(yesterday)[yesterday.day]['day']
         else:
             self.attributes['attribution'] = "Data provided by "+self._base_uri
             self.attributes['contracts'] = self.contracts()
             self.attributes['summary'] = self.monthly_recent()
             self.attributes['this_month'] = self.daily_for_month(
                 datetime.date.today())
-            self.state = self.attributes['summary']['state']
+            self.state = self.daily_for_month(
+                yesterday)[yesterday.day]['total']
         return self.attributes
 
     def close_session(self):

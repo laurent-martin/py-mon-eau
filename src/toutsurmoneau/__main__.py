@@ -43,6 +43,8 @@ def command_line():
         data = client.daily_for_month(datetime.date.today())
     elif command == 'check_credentials':
         data = client.check_credentials()
+    elif command == 'state':
+        data = client.state
     else:
         raise Exception('No such command: '+command)
     print(data)
