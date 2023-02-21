@@ -204,7 +204,11 @@ class ToutSurMonEau():
 
     def check_credentials(self):
         """Exception if credentials are not valid"""
-        self.contracts()
+        try:
+            self.contracts()
+        except Exception:
+            return False
+        return True
 
     def update(self):
         """Return a summary of collected data."""

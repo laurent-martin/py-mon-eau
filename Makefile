@@ -1,5 +1,5 @@
 all::
-build:
+build: clean
 	python3 -m pip install --upgrade build
 	python3 -m build
 	twine check dist/*
@@ -16,6 +16,7 @@ test:
 	. private/env.sh && toutsurmoneau -u $$U -p $$P -e total_volume
 	. private/env.sh && toutsurmoneau -u $$U -p $$P -e monthly_recent
 	. private/env.sh && toutsurmoneau -u $$U -p $$P -e daily_for_month
+	. private/env.sh && toutsurmoneau -u $$U -p $$P -e check_credentials
 clean:
 	rm -fr dist
 	find . -name '*.egg-info' -print0|xargs -0 rm -fr
