@@ -1,6 +1,7 @@
 import toutsurmoneau
 import argparse
 import sys
+import yaml
 import datetime
 
 
@@ -26,29 +27,29 @@ def command_line():
 
     try:
         client.update()
-    except BaseException as exp:
-        print(exp)
-        return 1
+        if command == 'attributes':
+            data = client.attributes
+        elif command == 'contracts':
+            data = client.contracts()
+        elif command == 'total_volume':
+            data = client.total_volume()
+        elif command == 'monthly_recent':
+            data = client.monthly_recent()
+        elif command == 'daily_for_month':
+            data = client.daily_for_month(datetime.date.today())
+        elif command == 'check_credentials':
+            data = client.check_credentials()
+        elif command == 'state':
+            data = client.state
+        else:
+            raise Exception('No such command: '+command)
+        yaml.dump(data, sys.stdout)
+        return 0
+    #except BaseException as exp:
+    #    print(exp)
+    #    return 1
     finally:
         client.close_session()
-    if command == 'attributes':
-        data = client.attributes
-    elif command == 'contracts':
-        data = client.contracts()
-    elif command == 'total_volume':
-        data = client.total_volume()
-    elif command == 'monthly_recent':
-        data = client.monthly_recent()
-    elif command == 'daily_for_month':
-        data = client.daily_for_month(datetime.date.today())
-    elif command == 'check_credentials':
-        data = client.check_credentials()
-    elif command == 'state':
-        data = client.state
-    else:
-        raise Exception('No such command: '+command)
-    print(data)
-    return 0
 
 
 if __name__ == '__main__':

@@ -4,7 +4,9 @@ import datetime
 
 
 class ToutSurMonEau():
-    """Access API from toutsurmoneau.fr"""
+    """
+    Retrieve subscriber and counter information from Suez on toutsurmoneau.fr
+    """
     # supported providers
     BASE_URIS = {
         'Suez': 'https://www.toutsurmoneau.fr/mon-compte-en-ligne',
@@ -25,7 +27,8 @@ class ToutSurMonEau():
               'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
     def __init__(self, username, password, counter_id=None, provider=None, session=None, timeout=None, auto_close=None, use_litre=True, compatibility=True):
-        """Initialize the client object.
+        """
+        Initialize the client object.
         If counter_id is None, it will be read from the web.
         If provider is None, 'Suez' is used.
         If session is None, an HTTP session is opened locally and auto_close default to True
@@ -34,6 +37,10 @@ class ToutSurMonEau():
         """
         self.attributes = {}
         self.state = {}
+        # Legacy, not used
+        self.success = True
+        # Legacy, not used
+        self.data = {}
         self._username = username
         self._password = password
         self._id = counter_id
@@ -118,6 +125,9 @@ class ToutSurMonEau():
         self._cookies = {self.SESSION_ID: the_cookies[self.SESSION_ID]}
 
     def _counter_id(self) -> str:
+        """
+        Retrieve the subscribers counter identifier
+        """
         if self._id is None or "".__eq__(self._id):
             if self._cookies is None:
                 self._generate_access_cookie()
@@ -144,64 +154,90 @@ class ToutSurMonEau():
             self._cookies = None
 
     def _convert_volume(self, volume: float) -> float | int:
+        """
+        Converts volume to desired unit (m3 or litre)
+        """
         if self._use_litre:
             return int(1000*volume)
         else:
             return volume
 
+    def _is_invalid_absolute(self, value):
+        """
+        @param value the absolute volume value on counter
+        @return True if zero: invalid value
+        """
+        return int(value) == 0
+
     def contracts(self):
         return self._call_api(self.API_ENDPOINT_CONTRACT)
 
-    # @param report_date [datetime.date] use year and month, built with Date.new(year,month,1)
-    # @return Hash [day_in_month]={day:, total:}
     def daily_for_month(self, report_date: datetime.date) -> dict:
-        """Returns daily usage for the specified month, give Date object"""
+        """
+        @param report_date [datetime.date] specify year/month for report, e.g. built with Date.new(year,month,1)
+        @return [dict] [day_in_month]={day:, total:} daily usage for the specified month
+        """
         if not isinstance(report_date, datetime.date):
             raise Exception('provide a date')
         daily = self._call_api('{}/{}/{}/{}'.format(
             self.API_ENDPOINT_DAILY, report_date.year, report_date.month, self._counter_id()))
         # since the month is known, keep only day in result (avoid redundant information)
-        result = {}
+        result = {
+            'daily': {},
+            'absolute': {}
+        }
         for i in daily:
-            if i[2] != 0:
-                result[datetime.datetime.strptime(
-                    i[0], '%d/%m/%Y').day] = {'day': self._convert_volume(i[1]), 'total': self._convert_volume(i[2])}
+            if self._is_invalid_absolute(i[2]):
+                break
+            day_index = datetime.datetime.strptime(i[0], '%d/%m/%Y').day
+            result['daily'][day_index] = self._convert_volume(i[1])
+            result['absolute'][day_index] = self._convert_volume(i[2])
         return result
 
-    # @return [Hash] current month
     def monthly_recent(self) -> dict:
+        """
+        @return [Hash] current month
+        """
         monthly = self._call_api(
             self.API_ENDPOINT_MONTHLY + '/' + self._counter_id())
-        h = {}
         result = {
-            'monthly':                h,
-            'state':                  None,
-            'highest_monthly_volume': monthly.pop(),
-            'last_year_volume':       monthly.pop(),
-            'this_year_volume':       monthly.pop()
+            'highest_monthly_volume': self._convert_volume(monthly.pop()),
+            'last_year_volume':       self._convert_volume(monthly.pop()),
+            'this_year_volume':       self._convert_volume(monthly.pop()),
+            'monthly':                {},
+            'absolute':               {}
         }
         # fill monthly by year and month, we assume values are in date order
         for i in monthly:
             # skip values in the future... (counter value is set to zero if there is no reading for future values)
-            if int(i[2]) == 0:
-                next
-            # date is Month Year
+            if self._is_invalid_absolute(i[2]):
+                break
+            # date is "Month Year"
             d = i[3].split(' ')
             year = int(d[1])
-            month = 1 + self.MONTHS.index(d[0])
-            if year not in h:
-                h[year] = {}
-            h[year][month] = {
-                'month': self._convert_volume(i[1]),
-                'total': self._convert_volume(i[2])
-            }
+            if year not in result['monthly']:
+                result['monthly'][year] = {}
+                result['absolute'][year] = {}
+            # if len(result['monthly'][year]) != self.MONTHS.index(d[0]):
+            #    raise Exception("Received result not in order"+str(self.MONTHS.index(d[0])))
+            # result['monthly'][year].append(self._convert_volume(i[1]))
+            # result['absolute'][year].append(self._convert_volume(i[2]))
+            month_index = self.MONTHS.index(d[0])
+            result['monthly'][year][month_index] = self._convert_volume(i[1])
+            result['absolute'][year][month_index] = self._convert_volume(i[2])
         return result
 
     def total_volume(self) -> float | int:
-        return self.monthly_recent()['state']
+        """
+        @return the latest counter reading
+        """
+        yesterday = datetime.date.today() - datetime.timedelta(days=1)
+        return self.daily_for_month(yesterday)['absolute'][yesterday.day]
 
     def check_credentials(self):
-        """Exception if credentials are not valid"""
+        """
+        @return True if credentials are valid
+        """
         try:
             self.contracts()
         except Exception:
@@ -209,7 +245,9 @@ class ToutSurMonEau():
         return True
 
     def update(self):
-        """Return a summary of collected data."""
+        """
+        @return a summary of collected data.
+        """
         today = datetime.date.today()
         yesterday = today - datetime.timedelta(days=1)
         if self._compatibility:
@@ -223,7 +261,8 @@ class ToutSurMonEau():
                 today)
             self.attributes['previousMonthConsumption'] = self.daily_for_month(
                 datetime.date(today.year, today.month - 1, 1))
-            self.state = self.daily_for_month(yesterday)[yesterday.day]['day']
+            self.state = self.daily_for_month(
+                yesterday)['daily'][yesterday.day]
         else:
             self.attributes['attribution'] = "Data provided by "+self._base_uri
             self.attributes['contracts'] = self.contracts()
@@ -231,7 +270,7 @@ class ToutSurMonEau():
             self.attributes['this_month'] = self.daily_for_month(
                 datetime.date.today())
             self.state = self.daily_for_month(
-                yesterday)[yesterday.day]['total']
+                yesterday)['absolute'][yesterday.day]
         return self.attributes
 
     def close_session(self):
