@@ -21,4 +21,4 @@ clean:
 	rm -fr dist
 	find . -name '*.egg-info' -print0|xargs -0 rm -fr
 bumpver:
-	bumpver update --patch --allow-dirty
+	bumpver update --patch
