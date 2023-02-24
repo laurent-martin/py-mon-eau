@@ -126,7 +126,8 @@ class ToutSurMonEau():
 
     def _counter_id(self) -> str:
         """
-        Retrieve the subscribers counter identifier
+        @return subscribers counter identifier
+        If it was not provided in initialization, then it is read mon the web site.
         """
         if self._id is None or "".__eq__(self._id):
             if self._cookies is None:
@@ -146,7 +147,10 @@ class ToutSurMonEau():
             if 'application/json' in response.headers.get('content-type'):
                 if self._auto_close:
                     self.close_session()
-                return response.json()
+                result = response.json()
+                if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
+                    raise Exception(result[1])
+                return result
             if retried:
                 raise Exception('Failed refreshing cookie')
             retried = True
@@ -218,21 +222,27 @@ class ToutSurMonEau():
             if year not in result['monthly']:
                 result['monthly'][year] = {}
                 result['absolute'][year] = {}
-            # if len(result['monthly'][year]) != self.MONTHS.index(d[0]):
-            #    raise Exception("Received result not in order"+str(self.MONTHS.index(d[0])))
-            # result['monthly'][year].append(self._convert_volume(i[1]))
-            # result['absolute'][year].append(self._convert_volume(i[2]))
-            month_index = self.MONTHS.index(d[0])
+            month_index = 1+self.MONTHS.index(d[0])
             result['monthly'][year][month_index] = self._convert_volume(i[1])
             result['absolute'][year][month_index] = self._convert_volume(i[2])
         return result
 
-    def total_volume(self) -> float | int:
+    def latest_counter_reading(self, what='absolute', month_data=None) -> float | int:
         """
         @return the latest counter reading
         """
-        yesterday = datetime.date.today() - datetime.timedelta(days=1)
-        return self.daily_for_month(yesterday)['absolute'][yesterday.day]
+        test_date = datetime.date.today()
+        # latest available value may be yesterday or the day before
+        for _ in range(3):
+            if month_data is None:
+                month_data = self.daily_for_month(test_date)
+            test_day = test_date.day
+            if test_day in month_data[what]:
+                return month_data[what][test_day]
+            test_date = test_date - datetime.timedelta(days=1)
+            if test_date.day > test_day:
+                month_data = None
+        raise Exception("Cannot get latest counter value")
 
     def check_credentials(self):
         """
@@ -249,7 +259,6 @@ class ToutSurMonEau():
         @return a summary of collected data.
         """
         today = datetime.date.today()
-        yesterday = today - datetime.timedelta(days=1)
         if self._compatibility:
             self.attributes['attribution'] = "Data provided by "+self._base_uri
             summary = self.monthly_recent()
@@ -261,16 +270,16 @@ class ToutSurMonEau():
                 today)
             self.attributes['previousMonthConsumption'] = self.daily_for_month(
                 datetime.date(today.year, today.month - 1, 1))
-            self.state = self.daily_for_month(
-                yesterday)['daily'][yesterday.day]
+            self.state = self.latest_counter_reading(
+                'daily', self.attributes['thisMonthConsumption'])
         else:
             self.attributes['attribution'] = "Data provided by "+self._base_uri
             self.attributes['contracts'] = self.contracts()
             self.attributes['summary'] = self.monthly_recent()
             self.attributes['this_month'] = self.daily_for_month(
                 datetime.date.today())
-            self.state = self.daily_for_month(
-                yesterday)['absolute'][yesterday.day]
+            self.state = self.latest_counter_reading(
+                'absolute', self.attributes['this_month'])
         return self.attributes
 
     def close_session(self):
