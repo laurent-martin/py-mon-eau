@@ -1,6 +1,6 @@
 # py-mon-eau
 
-Version 0.0.8
+Version 0.0.9
 
 Get your water counter data from your Suez account (<www.toutsurmoneau.fr>)
 
