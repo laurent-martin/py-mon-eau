@@ -12,17 +12,17 @@ def command_line():
                         help='Suez username')
     parser.add_argument('-p', '--password',
                         required=True, help='Password')
-    parser.add_argument('-c', '--counter_id',
-                        required=False, help='Counter Id')
+    parser.add_argument('-c', '--meter_id',
+                        required=False, help='Water Meter Id')
     parser.add_argument('-P', '--provider',
                         required=False, help='Provider name')
     parser.add_argument('-e', '--execute',
-                        required=False, help='Command to execute')
-
+                        required=False, help='Command to execute (attributes,contracts,meter_id,latest_meter_reading,monthly_recent,daily_for_month,check_credentials)')
+    parser.add_argument('--compat', action=argparse.BooleanOptionalAction, default= False)
     args = parser.parse_args()
 
     client = toutsurmoneau.ToutSurMonEau(args.username, args.password,
-                                         args.counter_id, args.provider, auto_close=False)
+                                         args.meter_id, args.provider, auto_close=False, compatibility=args.compat)
     command = args.execute or 'attributes'
 
     try:
@@ -32,16 +32,18 @@ def command_line():
                 'attr': client.attributes,
                 'state': client.state
             }
+        elif command == 'check_credentials':
+            data = client.check_credentials()
         elif command == 'contracts':
             data = client.contracts()
-        elif command == 'latest_counter_reading':
-            data = client.latest_counter_reading()
+        elif command == 'meter_id':
+            data = client.meter_id()
+        elif command == 'latest_meter_reading':
+            data = client.latest_meter_reading()
         elif command == 'monthly_recent':
             data = client.monthly_recent()
         elif command == 'daily_for_month':
             data = client.daily_for_month(datetime.date.today())
-        elif command == 'check_credentials':
-            data = client.check_credentials()
         else:
             raise Exception('No such command: '+command)
         yaml.dump(data, sys.stdout)

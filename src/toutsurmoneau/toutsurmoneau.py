@@ -5,7 +5,7 @@ import datetime
 
 class ToutSurMonEau():
     """
-    Retrieve subscriber and counter information from Suez on toutsurmoneau.fr
+    Retrieve subscriber and meter information from Suez on toutsurmoneau.fr
     """
     # supported providers
     BASE_URIS = {
@@ -15,9 +15,9 @@ class ToutSurMonEau():
     PAGE_LOGIN = 'je-me-connecte'
     PAGE_DASHBOARD = 'tableau-de-bord'
     PAGE_CONSUMPTION = 'historique-de-consommation-tr'
-    # daily (Jours) : /Y/m/counterid : Array(JJMMYYY, daily volume, cumulative volume). Volumes: .xxx
+    # daily (Jours) : /Y/m/meter_id : Array(JJMMYYY, daily volume, cumulative volume). Volumes: .xxx
     API_ENDPOINT_DAILY = 'statJData'
-    # monthly (Mois) : /counterid : Array(mmm. yy, monthly volume, cumulative volume, Mmmmm YYYY)
+    # monthly (Mois) : /meter_id : Array(mmm. yy, monthly volume, cumulative volume, Mmmmm YYYY)
     API_ENDPOINT_MONTHLY = 'statMData'
     API_ENDPOINT_CONTRACT = 'donnees-contrats'
     SESSION_ID = 'eZSESSID'
@@ -26,10 +26,10 @@ class ToutSurMonEau():
     MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
               'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
-    def __init__(self, username, password, counter_id=None, provider=None, session=None, timeout=None, auto_close=None, use_litre=True, compatibility=True):
+    def __init__(self, username, password: str, meter_id: (str | None) = None, provider: (str | None) = None, session=None, timeout=None, auto_close: (bool | None) = None, use_litre=True, compatibility=True):
         """
         Initialize the client object.
-        If counter_id is None, it will be read from the web.
+        If meter_id is None, it will be read from the web.
         If provider is None, 'Suez' is used.
         If session is None, an HTTP session is opened locally and auto_close default to True
         Else auto_close default to False
@@ -37,13 +37,13 @@ class ToutSurMonEau():
         """
         self.attributes = {}
         self.state = {}
-        # Legacy, not used
+        # Legacy, not used:
         self.success = True
-        # Legacy, not used
+        # Legacy, not used:
         self.data = {}
         self._username = username
         self._password = password
-        self._id = counter_id
+        self._id = meter_id
         self._session = session
         self._timeout = timeout
         self._cookies = None
@@ -77,7 +77,7 @@ class ToutSurMonEau():
         If _cookies is None, then it sets it, else it remains unchanged.
         """
         response = self._session_get(page, cookies=self._cookies)
-        # get counter id from page
+        # get meter id from page
         matcher = re.compile(reg_ex)
         matches = matcher.search(response.content.decode('utf-8'))
         if matches is None:
@@ -124,19 +124,6 @@ class ToutSurMonEau():
         # build cookie used when authenticated
         self._cookies = {self.SESSION_ID: the_cookies[self.SESSION_ID]}
 
-    def _counter_id(self) -> str:
-        """
-        @return subscribers counter identifier
-        If it was not provided in initialization, then it is read mon the web site.
-        """
-        if self._id is None or "".__eq__(self._id):
-            if self._cookies is None:
-                self._generate_access_cookie()
-            # Read counter ID
-            self._id = self._find_in_page(
-                self.PAGE_CONSUMPTION, '/month/([0-9]+)')
-        return self._id
-
     def _call_api(self, endpoint) -> dict:
         """Call the API, regenerate cookie if necessary"""
         retried = False
@@ -168,10 +155,23 @@ class ToutSurMonEau():
 
     def _is_invalid_absolute(self, value):
         """
-        @param value the absolute volume value on counter
+        @param value the absolute volume value on meter
         @return True if zero: invalid value
         """
         return int(value) == 0
+
+    def meter_id(self) -> str:
+        """
+        @return subscriber's water meter identifier
+        If it was not provided in initialization, then it is read mon the web site.
+        """
+        if self._id is None or "".__eq__(self._id):
+            if self._cookies is None:
+                self._generate_access_cookie()
+            # Read meter ID
+            self._id = self._find_in_page(
+                self.PAGE_CONSUMPTION, '/month/([0-9]+)')
+        return self._id
 
     def contracts(self):
         return self._call_api(self.API_ENDPOINT_CONTRACT)
@@ -184,7 +184,7 @@ class ToutSurMonEau():
         if not isinstance(report_date, datetime.date):
             raise Exception('provide a date')
         daily = self._call_api('{}/{}/{}/{}'.format(
-            self.API_ENDPOINT_DAILY, report_date.year, report_date.month, self._counter_id()))
+            self.API_ENDPOINT_DAILY, report_date.year, report_date.month, self.meter_id()))
         # since the month is known, keep only day in result (avoid redundant information)
         result = {
             'daily': {},
@@ -203,7 +203,7 @@ class ToutSurMonEau():
         @return [Hash] current month
         """
         monthly = self._call_api(
-            self.API_ENDPOINT_MONTHLY + '/' + self._counter_id())
+            self.API_ENDPOINT_MONTHLY + '/' + self.meter_id())
         result = {
             'highest_monthly_volume': self._convert_volume(monthly.pop()),
             'last_year_volume':       self._convert_volume(monthly.pop()),
@@ -213,7 +213,7 @@ class ToutSurMonEau():
         }
         # fill monthly by year and month, we assume values are in date order
         for i in monthly:
-            # skip values in the future... (counter value is set to zero if there is no reading for future values)
+            # skip values in the future... (meter value is set to zero if there is no reading for future values)
             if self._is_invalid_absolute(i[2]):
                 break
             # date is "Month Year"
@@ -227,22 +227,22 @@ class ToutSurMonEau():
             result['absolute'][year][month_index] = self._convert_volume(i[2])
         return result
 
-    def latest_counter_reading(self, what='absolute', month_data=None) -> float | int:
+    def latest_meter_reading(self, what='absolute', month_data=None) -> float | int:
         """
-        @return the latest counter reading
+        @return the latest meter reading
         """
-        test_date = datetime.date.today()
+        reading_date = datetime.date.today()
         # latest available value may be yesterday or the day before
         for _ in range(3):
             if month_data is None:
-                month_data = self.daily_for_month(test_date)
-            test_day = test_date.day
+                month_data = self.daily_for_month(reading_date)
+            test_day = reading_date.day
             if test_day in month_data[what]:
-                return month_data[what][test_day]
-            test_date = test_date - datetime.timedelta(days=1)
-            if test_date.day > test_day:
+                return {'date': reading_date, 'volume': month_data[what][test_day]}
+            reading_date = reading_date - datetime.timedelta(days=1)
+            if reading_date.day > test_day:
                 month_data = None
-        raise Exception("Cannot get latest counter value")
+        raise Exception("Cannot get latest meter value")
 
     def check_credentials(self):
         """
@@ -270,15 +270,15 @@ class ToutSurMonEau():
                 today)
             self.attributes['previousMonthConsumption'] = self.daily_for_month(
                 datetime.date(today.year, today.month - 1, 1))
-            self.state = self.latest_counter_reading(
-                'daily', self.attributes['thisMonthConsumption'])
+            self.state = self.latest_meter_reading(
+                'daily', self.attributes['thisMonthConsumption'])['volume']
         else:
             self.attributes['attribution'] = "Data provided by "+self._base_uri
             self.attributes['contracts'] = self.contracts()
             self.attributes['summary'] = self.monthly_recent()
             self.attributes['this_month'] = self.daily_for_month(
                 datetime.date.today())
-            self.state = self.latest_counter_reading(
+            self.state = self.latest_meter_reading(
                 'absolute', self.attributes['this_month'])
         return self.attributes
 

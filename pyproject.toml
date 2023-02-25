@@ -2,7 +2,7 @@
 [project]
 name = "toutsurmoneau"
 version = "0.0.9"
-description = "Retrieve water counter information from Suez web site https://www.toutsurmoneau.fr/"
+description = "Retrieve water meter information from Suez web site https://www.toutsurmoneau.fr/"
 readme = "README.md"
 requires-python = ">=3.4"
 license = { file ="LICENSE" }
