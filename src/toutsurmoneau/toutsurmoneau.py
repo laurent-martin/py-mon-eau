@@ -8,7 +8,7 @@ class ToutSurMonEau():
     Retrieve subscriber and meter information from Suez on toutsurmoneau.fr
     """
     # supported providers
-    BASE_URIS = {
+    PROVIDER_URLS = {
         'Suez': 'https://www.toutsurmoneau.fr/mon-compte-en-ligne',
         'Eau Olivet': 'https://www.eau-olivet.fr/mon-compte-en-ligne'
     }
@@ -29,13 +29,23 @@ class ToutSurMonEau():
     def __init__(self, username, password: str, meter_id: (str | None) = None, provider: (str | None) = None, session=None, timeout=None, auto_close: (bool | None) = None, use_litre=True, compatibility=True):
         """
         Initialize the client object.
+        @param username account id
+        @param password account password
+        @param meter_id water meter ID (optional)
+        @param provider name of provider from PROVIDER_URLS, or URL of provider
+        @param session an HTTP session
+        @param timeout HTTP timeout
+        @param auto_close close the http session after each api call
+        @param use_litre use Litre a unit if True, else use api native unit (cubic meter)
+        @param compatibility if True, return values compatible with pySuez
         If meter_id is None, it will be read from the web.
-        If provider is None, 'Suez' is used.
         If session is None, an HTTP session is opened locally and auto_close default to True
         Else auto_close default to False
         auto_close set to True/False overrides default behavior.
         """
+        # updated when update() is called
         self.attributes = {}
+        # current meter reading
         self.state = {}
         # Legacy, not used:
         self.success = True
@@ -48,12 +58,9 @@ class ToutSurMonEau():
         self._timeout = timeout
         self._cookies = None
         self._compatibility = compatibility
+        self._use_litre = use_litre
         if self._compatibility:
             self._use_litre = True
-        else:
-            self._use_litre = use_litre
-        if provider is None:
-            provider = 'Suez'
         if auto_close is None:
             if session is None:
                 self._auto_close = True
@@ -61,15 +68,20 @@ class ToutSurMonEau():
                 self._auto_close = False
         else:
             self._auto_close = auto_close
-        self._base_uri = self.BASE_URIS[provider]
-        if self._base_uri is None:
-            self._base_uri = provider
+        # Default value
+        if provider is None:
+            provider = 'Suez'
+        # If name in table, use URL, or the provider is the URL
+        if provider in self.PROVIDER_URLS:
+            self._base_url = self.PROVIDER_URLS[provider]
+        else:
+            self._base_url = provider
 
     def _session_get(self, endpoint, cookies=None):
         """Call GET on specified endpoint (path)"""
         if self._session is None:
             self._session = requests.Session()
-        return self._session.get(self._base_uri+'/'+endpoint, cookies=cookies, timeout=self._timeout)
+        return self._session.get(self._base_url+'/'+endpoint, cookies=cookies, timeout=self._timeout)
 
     def _find_in_page(self, page: str, reg_ex: str) -> str:
         """
@@ -88,7 +100,7 @@ class ToutSurMonEau():
             self._cookies = response.cookies
         return result
 
-    def _generate_access_cookie(self):
+    def _generate_access_cookie(self) -> None:
         """
         Generate authentication cookie.
         self._cookies is None when called, and is set after call.
@@ -113,7 +125,7 @@ class ToutSurMonEau():
         }
         # get session cookie used to be authenticated
         response = self._session.post(
-            self._base_uri + '/' + self.PAGE_LOGIN,
+            self._base_url + '/' + self.PAGE_LOGIN,
             data=data,
             cookies=login_cookies,
             allow_redirects=False)
@@ -153,7 +165,7 @@ class ToutSurMonEau():
         else:
             return volume
 
-    def _is_invalid_absolute(self, value):
+    def _is_invalid_absolute(self, value) -> bool:
         """
         @param value the absolute volume value on meter
         @return True if zero: invalid value
@@ -173,8 +185,13 @@ class ToutSurMonEau():
                 self.PAGE_CONSUMPTION, '/month/([0-9]+)')
         return self._id
 
-    def contracts(self):
-        return self._call_api(self.API_ENDPOINT_CONTRACT)
+    def contracts(self) -> dict:
+        contract_list = self._call_api(self.API_ENDPOINT_CONTRACT)
+        for contract in contract_list:
+            for key in ['website-link', 'searchData']:
+                if key in contract:
+                    del contract[key]
+        return contract_list
 
     def daily_for_month(self, report_date: datetime.date) -> dict:
         """
@@ -259,8 +276,8 @@ class ToutSurMonEau():
         @return a summary of collected data.
         """
         today = datetime.date.today()
+        self.attributes['attribution'] = "Data provided by "+self._base_url
         if self._compatibility:
-            self.attributes['attribution'] = "Data provided by "+self._base_uri
             summary = self.monthly_recent()
             self.attributes['lastYearOverAll'] = summary['last_year_volume']
             self.attributes['thisYearOverAll'] = summary['this_year_volume']
@@ -273,13 +290,14 @@ class ToutSurMonEau():
             self.state = self.latest_meter_reading(
                 'daily', self.attributes['thisMonthConsumption'])['volume']
         else:
-            self.attributes['attribution'] = "Data provided by "+self._base_uri
             self.attributes['contracts'] = self.contracts()
-            self.attributes['summary'] = self.monthly_recent()
+            self.attributes['monthly'] = self.monthly_recent()
             self.attributes['this_month'] = self.daily_for_month(
                 datetime.date.today())
+            self.attributes['latest_daily'] = self.latest_meter_reading(
+                'daily', self.attributes['this_month'])
             self.state = self.latest_meter_reading(
-                'absolute', self.attributes['this_month'])
+                'absolute', self.attributes['this_month'])['volume']
         return self.attributes
 
     def close_session(self):

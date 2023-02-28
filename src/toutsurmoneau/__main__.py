@@ -18,7 +18,8 @@ def command_line():
                         required=False, help='Provider name')
     parser.add_argument('-e', '--execute',
                         required=False, help='Command to execute (attributes,contracts,meter_id,latest_meter_reading,monthly_recent,daily_for_month,check_credentials)')
-    parser.add_argument('--compat', action=argparse.BooleanOptionalAction, default= False)
+    parser.add_argument(
+        '--compat', action=argparse.BooleanOptionalAction, default=False)
     args = parser.parse_args()
 
     client = toutsurmoneau.ToutSurMonEau(args.username, args.password,
