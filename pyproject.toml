@@ -5,21 +5,19 @@ version = "0.0.11"
 description = "Retrieve water meter information from Suez web site https://www.toutsurmoneau.fr/"
 readme = "README.md"
 requires-python = ">=3.4"
-license = { file ="LICENSE" }
-authors = [
-  { name="Laurent MARTIN", email="laurent.martin.l@gmail.com" },
-]
+license = { file = "LICENSE" }
+authors = [{ name = "Laurent MARTIN", email = "laurent.martin.l@gmail.com" }]
 maintainers = [
-  { name="Laurent MARTIN", email="laurent.martin.l@gmail.com" },
+  { name = "Laurent MARTIN", email = "laurent.martin.l@gmail.com" },
 ]
-keywords = [ "suez" ]
+keywords = ["suez", "toutsurmoneau"]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
 ]
-dependencies = ['regex', 'requests', 'datetime']
+dependencies = ['regex', 'requests', 'datetime', 'docutils']
 [project.urls]
 "Homepage" = "https://github.com/laurent-martin/py-mon-eau"
 "Bug Tracker" = "https://github.com/laurent-martin/py-mon-eau/issues"
@@ -35,13 +33,6 @@ tag = true
 push = true
 
 [tool.bumpver.file_patterns]
-"pyproject.toml" = [
-    'version = "{version}"',
-]
-"README.md" = [
-    "{version}",
-    "{pep440_version}",
-]
-"src/toutsurmoneau/__init__.py" = [
-    '^__version__ = "{version}"$',
-]
+"pyproject.toml" = ['version = "{version}"']
+"README.md" = ["{version}", "{pep440_version}"]
+"src/toutsurmoneau/__init__.py" = ['^__version__ = "{version}"$']

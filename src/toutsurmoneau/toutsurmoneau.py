@@ -1,7 +1,9 @@
 import requests
 import re
 import datetime
+import logging
 
+_LOGGER = logging.getLogger(__name__)
 
 class ToutSurMonEau():
     """
@@ -138,6 +140,7 @@ class ToutSurMonEau():
 
     def _call_api(self, endpoint) -> dict:
         """Call the API, regenerate cookie if necessary"""
+        _LOGGER.debug("Calling: %s", endpoint)
         retried = False
         while True:
             if self._cookies is None:
@@ -193,15 +196,21 @@ class ToutSurMonEau():
                     del contract[key]
         return contract_list
 
-    def daily_for_month(self, report_date: datetime.date) -> dict:
+    def daily_for_month(self, report_date: datetime.date, throw: bool = False) -> dict:
         """
         @param report_date [datetime.date] specify year/month for report, e.g. built with Date.new(year,month,1)
+        @param throw set to True to get an exception if there is no data for that date
         @return [dict] [day_in_month]={day:, total:} daily usage for the specified month
         """
         if not isinstance(report_date, datetime.date):
             raise Exception('provide a date')
-        daily = self._call_api('{}/{}/{}/{}'.format(
-            self.API_ENDPOINT_DAILY, report_date.year, report_date.month, self.meter_id()))
+        try:
+            daily = self._call_api('{}/{}/{}/{}'.format(
+                self.API_ENDPOINT_DAILY, report_date.year, report_date.month, self.meter_id()))
+        except Exception as e:
+            if throw:
+                raise e
+            daily = []
         # since the month is known, keep only day in result (avoid redundant information)
         result = {
             'daily': {},
@@ -251,11 +260,11 @@ class ToutSurMonEau():
         reading_date = datetime.date.today()
         # latest available value may be yesterday or the day before
         for _ in range(3):
+            test_day = reading_date.day
             if month_data is None:
                 month_data = self.daily_for_month(reading_date)
-            test_day = reading_date.day
-            if test_day in month_data[what]:
-                return {'date': reading_date, 'volume': month_data[what][test_day]}
+                if test_day in month_data[what]:
+                    return {'date': reading_date, 'volume': month_data[what][test_day]}
             reading_date = reading_date - datetime.timedelta(days=1)
             if reading_date.day > test_day:
                 month_data = None

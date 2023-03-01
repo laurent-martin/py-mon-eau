@@ -3,6 +3,9 @@ import argparse
 import sys
 import yaml
 import datetime
+import logging
+
+# logging.setLevel(logging.DEBUG)
 
 
 def command_line():
@@ -20,7 +23,12 @@ def command_line():
                         required=False, help='Command to execute (attributes,contracts,meter_id,latest_meter_reading,monthly_recent,daily_for_month,check_credentials)')
     parser.add_argument(
         '--compat', action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument(
+        '--debug', action=argparse.BooleanOptionalAction, default=False)
     args = parser.parse_args()
+
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
 
     client = toutsurmoneau.ToutSurMonEau(args.username, args.password,
                                          args.meter_id, args.provider, auto_close=False, compatibility=args.compat)
