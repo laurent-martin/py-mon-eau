@@ -5,30 +5,32 @@ import logging
 from typing import Optional, Union
 
 _LOGGER = logging.getLogger(__name__)
+# supported providers
+PROVIDER_URLS = {
+    'Suez': 'https://www.toutsurmoneau.fr/mon-compte-en-ligne',
+    'Eau Olivet': 'https://www.eau-olivet.fr/mon-compte-en-ligne'
+}
+PAGE_LOGIN = 'je-me-connecte'
+PAGE_DASHBOARD = 'tableau-de-bord'
+PAGE_CONSUMPTION = 'historique-de-consommation-tr'
+# daily (Jours) : /Y/m/meter_id : Array(JJMMYYY, daily volume, cumulative volume). Volumes: .xxx
+API_ENDPOINT_DAILY = 'statJData'
+# monthly (Mois) : /meter_id : Array(mmm. yy, monthly volume, cumulative volume, Mmmmm YYYY)
+API_ENDPOINT_MONTHLY = 'statMData'
+API_ENDPOINT_CONTRACT = 'donnees-contrats'
+SESSION_ID = 'eZSESSID'
+# regex is before utf8 encoding
+CSRF_TOKEN_REGEX = '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u0022'
+# Map french months to its index
+MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+          'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+METER_RETRIEVAL_MAX_DAYS_BACK = 3
 
 
 class ToutSurMonEau():
     """
     Retrieve subscriber and meter information from Suez on toutsurmoneau.fr
     """
-    # supported providers
-    PROVIDER_URLS = {
-        'Suez': 'https://www.toutsurmoneau.fr/mon-compte-en-ligne',
-        'Eau Olivet': 'https://www.eau-olivet.fr/mon-compte-en-ligne'
-    }
-    PAGE_LOGIN = 'je-me-connecte'
-    PAGE_DASHBOARD = 'tableau-de-bord'
-    PAGE_CONSUMPTION = 'historique-de-consommation-tr'
-    # daily (Jours) : /Y/m/meter_id : Array(JJMMYYY, daily volume, cumulative volume). Volumes: .xxx
-    API_ENDPOINT_DAILY = 'statJData'
-    # monthly (Mois) : /meter_id : Array(mmm. yy, monthly volume, cumulative volume, Mmmmm YYYY)
-    API_ENDPOINT_MONTHLY = 'statMData'
-    API_ENDPOINT_CONTRACT = 'donnees-contrats'
-    SESSION_ID = 'eZSESSID'
-    # regex is before utf8 encoding
-    CSRF_TOKEN_REGEX = '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u0022'
-    MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-              'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
     def __init__(self, username, password: str, meter_id: Optional[str] = None, provider: Optional[str] = None, session=None, timeout=None, auto_close: Optional[bool] = None, use_litre=True, compatibility=True):
         """
@@ -76,8 +78,8 @@ class ToutSurMonEau():
         if provider is None:
             provider = 'Suez'
         # If name in table, use URL, or the provider is the URL
-        if provider in self.PROVIDER_URLS:
-            self._base_url = self.PROVIDER_URLS[provider]
+        if provider in PROVIDER_URLS:
+            self._base_url = PROVIDER_URLS[provider]
         else:
             self._base_url = provider
 
@@ -120,7 +122,7 @@ class ToutSurMonEau():
             raise Exception('Clear cookie before asking update')
         # go to login page, retrieve token and login cookies
         csrf_token = self._find_in_page(
-            self.PAGE_LOGIN, self.CSRF_TOKEN_REGEX).encode('utf-8').decode('unicode-escape')
+            PAGE_LOGIN, CSRF_TOKEN_REGEX).encode('utf-8').decode('unicode-escape')
         # former regex: "_csrf_token" value="([^"]+)"
         login_cookies = self._cookies
         # reset cookies , as it is not yet the auth cookies
@@ -136,20 +138,20 @@ class ToutSurMonEau():
         }
         # get session cookie used to be authenticated
         response = self._session.post(
-            self._base_url + '/' + self.PAGE_LOGIN,
+            self._base_url + '/' + PAGE_LOGIN,
             data=data,
             cookies=login_cookies,
             allow_redirects=False)
         the_cookies = response.cookies.get_dict()
-        if (self.PAGE_DASHBOARD not in response.content.decode('utf-8')) or (self.SESSION_ID not in the_cookies):
+        if (PAGE_DASHBOARD not in response.content.decode('utf-8')) or (SESSION_ID not in the_cookies):
             raise Exception(
                 'Login error: Please check your username/password.')
         # build cookie used when authenticated
-        self._cookies = {self.SESSION_ID: the_cookies[self.SESSION_ID]}
+        self._cookies = {SESSION_ID: the_cookies[SESSION_ID]}
 
     def _call_api(self, endpoint) -> dict:
         """Call the API, regenerate cookie if necessary"""
-        _LOGGER.debug("Calling: %s", endpoint)
+        _LOGGER.debug(f"Calling: {endpoint}")
         retried = False
         while True:
             if self._cookies is None:
@@ -161,7 +163,7 @@ class ToutSurMonEau():
                 result = response.json()
                 if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
                     raise Exception(result[1])
-                _LOGGER.debug("Result: %s", result)
+                _LOGGER.debug(f"Result: {result}")
                 return result
             if retried:
                 raise Exception('Failed refreshing cookie')
@@ -195,11 +197,11 @@ class ToutSurMonEau():
                 self._generate_access_cookie()
             # Read meter ID
             self._id = self._find_in_page(
-                self.PAGE_CONSUMPTION, '/month/([0-9]+)')
+                PAGE_CONSUMPTION, '/month/([0-9]+)')
         return self._id
 
     def contracts(self) -> dict:
-        contract_list = self._call_api(self.API_ENDPOINT_CONTRACT)
+        contract_list = self._call_api(API_ENDPOINT_CONTRACT)
         for contract in contract_list:
             for key in ['website-link', 'searchData']:
                 if key in contract:
@@ -215,13 +217,13 @@ class ToutSurMonEau():
         if not isinstance(report_date, datetime.date):
             raise Exception('provide a date')
         try:
-            daily = self._call_api('{}/{}/{}/{}'.format(
-                self.API_ENDPOINT_DAILY, report_date.year, report_date.month, self.meter_id()))
+            daily = self._call_api(
+                f"{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{self.meter_id()}")
         except Exception as e:
             if throw:
                 raise e
             else:
-                _LOGGER.debug("Error: %s", e)
+                _LOGGER.debug(f"Error: {e}")
             daily = []
         # since the month is known, keep only day in result (avoid redundant information)
         result = {
@@ -230,10 +232,11 @@ class ToutSurMonEau():
         }
         for i in daily:
             if self._is_valid_absolute(i[2]):
-                day_index = int(datetime.datetime.strptime(i[0], '%d/%m/%Y').day)
+                day_index = int(
+                    datetime.datetime.strptime(i[0], '%d/%m/%Y').day)
                 result['daily'][day_index] = self._convert_volume(i[1])
                 result['absolute'][day_index] = self._convert_volume(i[2])
-        _LOGGER.debug("daily_for_month: %s", result)
+        _LOGGER.debug(f"daily_for_month: {result}")
         return result
 
     def monthly_recent(self) -> dict:
@@ -241,7 +244,7 @@ class ToutSurMonEau():
         @return [Hash] current month
         """
         monthly = self._call_api(
-            self.API_ENDPOINT_MONTHLY + '/' + self.meter_id())
+            API_ENDPOINT_MONTHLY + '/' + self.meter_id())
         result = {
             'highest_monthly_volume': self._convert_volume(monthly.pop()),
             'last_year_volume':       self._convert_volume(monthly.pop()),
@@ -259,9 +262,11 @@ class ToutSurMonEau():
                 if year not in result['monthly']:
                     result['monthly'][year] = {}
                     result['absolute'][year] = {}
-                month_index = 1+self.MONTHS.index(d[0])
-                result['monthly'][year][month_index] = self._convert_volume(i[1])
-                result['absolute'][year][month_index] = self._convert_volume(i[2])
+                month_index = 1+MONTHS.index(d[0])
+                result['monthly'][year][month_index] = self._convert_volume(
+                    i[1])
+                result['absolute'][year][month_index] = self._convert_volume(
+                    i[2])
         return result
 
     def latest_meter_reading(self, what='absolute', month_data=None) -> Union[float, int]:
@@ -270,9 +275,9 @@ class ToutSurMonEau():
         """
         reading_date = datetime.date.today()
         # latest available value may be yesterday or the day before
-        for _ in range(3):
+        for _ in range(METER_RETRIEVAL_MAX_DAYS_BACK):
             test_day = reading_date.day
-            _LOGGER.debug("Trying day: %s", test_day)
+            _LOGGER.debug(f"Trying day: {test_day}", )
             if month_data is None:
                 month_data = self.daily_for_month(reading_date)
             if test_day in month_data[what]:
@@ -280,7 +285,8 @@ class ToutSurMonEau():
             reading_date = reading_date - datetime.timedelta(days=1)
             if reading_date.day > test_day:
                 month_data = None
-        raise Exception("Cannot get latest meter value in last 3 days")
+        raise Exception(
+            f"Cannot get latest meter value in last {METER_RETRIEVAL_MAX_DAYS_BACK} days")
 
     def check_credentials(self):
         """
