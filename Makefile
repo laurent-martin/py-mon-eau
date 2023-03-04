@@ -11,8 +11,9 @@ install: clean build
 #pip install --force-reinstall dist/toutsurmoneau-0.0.1-py3-none-any.whl
 fulltest: install test
 test:
+	python3 --version
 	. private/env.sh && $$toutsurmoneau -h
-	set -e;. private/env.sh;for compat in --no-compat --compat;do \
+	set -e;. private/env.sh;for compat in '' --compat;do \
 		for test_id in attributes meter_id contracts latest_meter_reading monthly_recent daily_for_month check_credentials;do \
 		    echo "== $${test_id} ($${compat}) =========================================================";\
 		    $$toutsurmoneau -u $$U -p $$P -e $$test_id $$compat;\

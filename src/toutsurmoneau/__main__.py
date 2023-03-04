@@ -22,9 +22,9 @@ def command_line():
     parser.add_argument('-e', '--execute',
                         required=False, help='Command to execute (attributes,contracts,meter_id,latest_meter_reading,monthly_recent,daily_for_month,check_credentials)')
     parser.add_argument(
-        '--compat', action=argparse.BooleanOptionalAction, default=False)
+        '--compat', action='store_true', default=False)
     parser.add_argument(
-        '--debug', action=argparse.BooleanOptionalAction, default=False)
+        '--debug', action='store_true', default=False)
     args = parser.parse_args()
 
     if args.debug:

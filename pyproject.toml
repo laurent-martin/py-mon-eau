@@ -4,7 +4,7 @@ name = "toutsurmoneau"
 version = "0.0.12"
 description = "Retrieve water meter information from Suez web site https://www.toutsurmoneau.fr/"
 readme = "README.md"
-requires-python = ">=3.4"
+requires-python = ">=3.7"
 license = { file = "LICENSE" }
 authors = [{ name = "Laurent MARTIN", email = "laurent.martin.l@gmail.com" }]
 maintainers = [
@@ -17,7 +17,7 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
-dependencies = ['regex', 'requests', 'datetime', 'docutils']
+dependencies = ['regex', 'requests', 'datetime', 'docutils', 'pyyaml']
 [project.urls]
 "Homepage" = "https://github.com/laurent-martin/py-mon-eau"
 "Bug Tracker" = "https://github.com/laurent-martin/py-mon-eau/issues"
