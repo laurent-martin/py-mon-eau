@@ -2,8 +2,10 @@ import requests
 import re
 import datetime
 import logging
+from typing import Optional, Union
 
 _LOGGER = logging.getLogger(__name__)
+
 
 class ToutSurMonEau():
     """
@@ -28,7 +30,7 @@ class ToutSurMonEau():
     MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
               'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
-    def __init__(self, username, password: str, meter_id: (str | None) = None, provider: (str | None) = None, session=None, timeout=None, auto_close: (bool | None) = None, use_litre=True, compatibility=True):
+    def __init__(self, username, password: str, meter_id: Optional[str] = None, provider: Optional[str] = None, session=None, timeout=None, auto_close: Optional[bool] = None, use_litre=True, compatibility=True):
         """
         Initialize the client object.
         @param username account id
@@ -84,6 +86,13 @@ class ToutSurMonEau():
         if self._session is None:
             self._session = requests.Session()
         return self._session.get(self._base_url+'/'+endpoint, cookies=cookies, timeout=self._timeout)
+
+    def _session_call(self, endpoint, cookies=None, data=None,):
+        """Call GET on specified endpoint (path)"""
+        if self._session is None:
+            self._session = requests.Session()
+        if data is None:
+            return self._session.get(self._base_url+'/'+endpoint, cookies=cookies, timeout=self._timeout)
 
     def _find_in_page(self, page: str, reg_ex: str) -> str:
         """
@@ -152,6 +161,7 @@ class ToutSurMonEau():
                 result = response.json()
                 if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
                     raise Exception(result[1])
+                _LOGGER.debug("Result: %s", result)
                 return result
             if retried:
                 raise Exception('Failed refreshing cookie')
@@ -159,7 +169,7 @@ class ToutSurMonEau():
             # reset cookie to regenerate
             self._cookies = None
 
-    def _convert_volume(self, volume: float) -> float | int:
+    def _convert_volume(self, volume: float) -> Union[float, int]:
         """
         Converts volume to desired unit (m3 or litre)
         """
@@ -168,12 +178,12 @@ class ToutSurMonEau():
         else:
             return volume
 
-    def _is_invalid_absolute(self, value) -> bool:
+    def _is_valid_absolute(self, value) -> bool:
         """
         @param value the absolute volume value on meter
         @return True if zero: invalid value
         """
-        return int(value) == 0
+        return int(value) != 0
 
     def meter_id(self) -> str:
         """
@@ -210,6 +220,8 @@ class ToutSurMonEau():
         except Exception as e:
             if throw:
                 raise e
+            else:
+                _LOGGER.debug("Error: %s", e)
             daily = []
         # since the month is known, keep only day in result (avoid redundant information)
         result = {
@@ -217,11 +229,11 @@ class ToutSurMonEau():
             'absolute': {}
         }
         for i in daily:
-            if self._is_invalid_absolute(i[2]):
-                break
-            day_index = datetime.datetime.strptime(i[0], '%d/%m/%Y').day
-            result['daily'][day_index] = self._convert_volume(i[1])
-            result['absolute'][day_index] = self._convert_volume(i[2])
+            if self._is_valid_absolute(i[2]):
+                day_index = int(datetime.datetime.strptime(i[0], '%d/%m/%Y').day)
+                result['daily'][day_index] = self._convert_volume(i[1])
+                result['absolute'][day_index] = self._convert_volume(i[2])
+        _LOGGER.debug("daily_for_month: %s", result)
         return result
 
     def monthly_recent(self) -> dict:
@@ -240,20 +252,19 @@ class ToutSurMonEau():
         # fill monthly by year and month, we assume values are in date order
         for i in monthly:
             # skip values in the future... (meter value is set to zero if there is no reading for future values)
-            if self._is_invalid_absolute(i[2]):
-                break
-            # date is "Month Year"
-            d = i[3].split(' ')
-            year = int(d[1])
-            if year not in result['monthly']:
-                result['monthly'][year] = {}
-                result['absolute'][year] = {}
-            month_index = 1+self.MONTHS.index(d[0])
-            result['monthly'][year][month_index] = self._convert_volume(i[1])
-            result['absolute'][year][month_index] = self._convert_volume(i[2])
+            if self._is_valid_absolute(i[2]):
+                # date is "Month Year"
+                d = i[3].split(' ')
+                year = int(d[1])
+                if year not in result['monthly']:
+                    result['monthly'][year] = {}
+                    result['absolute'][year] = {}
+                month_index = 1+self.MONTHS.index(d[0])
+                result['monthly'][year][month_index] = self._convert_volume(i[1])
+                result['absolute'][year][month_index] = self._convert_volume(i[2])
         return result
 
-    def latest_meter_reading(self, what='absolute', month_data=None) -> float | int:
+    def latest_meter_reading(self, what='absolute', month_data=None) -> Union[float, int]:
         """
         @return the latest meter reading
         """
@@ -261,14 +272,15 @@ class ToutSurMonEau():
         # latest available value may be yesterday or the day before
         for _ in range(3):
             test_day = reading_date.day
+            _LOGGER.debug("Trying day: %s", test_day)
             if month_data is None:
                 month_data = self.daily_for_month(reading_date)
-                if test_day in month_data[what]:
-                    return {'date': reading_date, 'volume': month_data[what][test_day]}
+            if test_day in month_data[what]:
+                return {'date': reading_date, 'volume': month_data[what][test_day]}
             reading_date = reading_date - datetime.timedelta(days=1)
             if reading_date.day > test_day:
                 month_data = None
-        raise Exception("Cannot get latest meter value")
+        raise Exception("Cannot get latest meter value in last 3 days")
 
     def check_credentials(self):
         """
