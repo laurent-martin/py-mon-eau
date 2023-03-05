@@ -90,7 +90,7 @@ class ToutSurMonEau():
         else:
             self._base_url = provider
 
-    def _load_page(self, endpoint, cookies=None, data=None) -> str:
+    def _load_page(self, endpoint, cookies=None, data=None) -> requests.Response:
         """Call GET (data=None) or POST on specified endpoint (path)"""
         if self._session is None:
             self._session = requests.Session()
@@ -123,7 +123,8 @@ class ToutSurMonEau():
         self._cookies is None when called, and is set after call.
         """
         if self._cookies is not None:
-            raise ToutSurMonEauError('INTERNAL ERROR: Clear cookie before asking update of it')
+            raise ToutSurMonEauError(
+                'INTERNAL ERROR: Clear cookie before asking update of it')
         # go to login page, retrieve token and login cookies
         csrf_token = self._find_in_page(
             PAGE_LOGIN, CSRF_TOKEN_REGEX).encode('utf-8').decode('unicode-escape')
@@ -155,7 +156,7 @@ class ToutSurMonEau():
         Regenerate cookie if necessary
         @return the dict of result
         """
-        _LOGGER.debug(f"Calling: {endpoint}")
+        _LOGGER.debug("Calling: %s", endpoint)
         retried = False
         while True:
             if self._cookies is None:
@@ -167,7 +168,7 @@ class ToutSurMonEau():
                 result = response.json()
                 if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
                     raise ToutSurMonEauError(result[1])
-                _LOGGER.debug(f"Result: {result}")
+                _LOGGER.debug("Result: %s", result)
                 return result
             if retried:
                 raise ToutSurMonEauError('Failed refreshing cookie')
@@ -207,7 +208,7 @@ class ToutSurMonEau():
 
     def contracts(self) -> dict:
         """List of contracts for the user.
-        
+
         @return the list of contracts associated to the calling user.
         """
         contract_list = self._call_api(API_ENDPOINT_CONTRACT)
@@ -233,7 +234,7 @@ class ToutSurMonEau():
             if throw:
                 raise e
             else:
-                _LOGGER.debug(f"Error: {e}")
+                _LOGGER.debug("Error: %s", e)
             daily = []
         # since the month is known, keep only day in result (avoid redundant information)
         result = {
@@ -246,7 +247,7 @@ class ToutSurMonEau():
                     datetime.datetime.strptime(i[0], '%d/%m/%Y').day)
                 result['daily'][day_index] = self._convert_volume(i[1])
                 result['absolute'][day_index] = self._convert_volume(i[2])
-        _LOGGER.debug(f"daily_for_month: {result}")
+        _LOGGER.debug("daily_for_month: %s", result)
         return result
 
     def monthly_recent(self) -> dict:
@@ -287,7 +288,7 @@ class ToutSurMonEau():
         # latest available value may be yesterday or the day before
         for _ in range(METER_RETRIEVAL_MAX_DAYS_BACK):
             test_day = reading_date.day
-            _LOGGER.debug(f"Trying day: {test_day}", )
+            _LOGGER.debug("Trying day: %d", test_day)
             if month_data is None:
                 month_data = self.daily_for_month(reading_date)
             if test_day in month_data[what]:
