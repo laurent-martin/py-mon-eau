@@ -1,7 +1,7 @@
-import requests
-import re
 import datetime
+import requests
 import logging
+import re
 from typing import Optional, Union
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,11 +20,17 @@ API_ENDPOINT_MONTHLY = 'statMData'
 API_ENDPOINT_CONTRACT = 'donnees-contrats'
 SESSION_ID = 'eZSESSID'
 # regex is before utf8 encoding
+# former regex: "_csrf_token" value="([^"]+)"
 CSRF_TOKEN_REGEX = '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u0022'
 # Map french months to its index
 MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
           'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 METER_RETRIEVAL_MAX_DAYS_BACK = 3
+
+
+class ToutSurMonEauError(Exception):
+    """Raised a problem occurs while calling the API"""
+    pass
 
 
 class ToutSurMonEau():
@@ -57,6 +63,7 @@ class ToutSurMonEau():
         self.success = True
         # Legacy, not used:
         self.data = {}
+        # store useful parameters
         self._username = username
         self._password = password
         self._id = meter_id
@@ -83,30 +90,27 @@ class ToutSurMonEau():
         else:
             self._base_url = provider
 
-    def _session_get(self, endpoint, cookies=None):
-        """Call GET on specified endpoint (path)"""
-        if self._session is None:
-            self._session = requests.Session()
-        return self._session.get(self._base_url+'/'+endpoint, cookies=cookies, timeout=self._timeout)
-
-    def _session_call(self, endpoint, cookies=None, data=None,):
-        """Call GET on specified endpoint (path)"""
+    def _load_page(self, endpoint, cookies=None, data=None) -> str:
+        """Call GET (data=None) or POST on specified endpoint (path)"""
         if self._session is None:
             self._session = requests.Session()
         if data is None:
-            return self._session.get(self._base_url+'/'+endpoint, cookies=cookies, timeout=self._timeout)
+            return self._session.get(f"{self._base_url}/{endpoint}", cookies=cookies, timeout=self._timeout)
+        else:
+            return self._session.post(
+                f"{self._base_url}/{endpoint}", cookies=cookies, data=data, allow_redirects=False)
 
     def _find_in_page(self, page: str, reg_ex: str) -> str:
         """
         Extract the regex from the specified page.
         If _cookies is None, then it sets it, else it remains unchanged.
         """
-        response = self._session_get(page, cookies=self._cookies)
+        response = self._load_page(page, cookies=self._cookies)
         # get meter id from page
         matcher = re.compile(reg_ex)
         matches = matcher.search(response.content.decode('utf-8'))
         if matches is None:
-            raise Exception('Could not find '+reg_ex+' in '+page)
+            raise ToutSurMonEauError(f"Could not find {reg_ex} in {page}")
         result = matches.group(1)
         # when not authenticated, cookies are used for authentication
         if self._cookies is None:
@@ -119,11 +123,10 @@ class ToutSurMonEau():
         self._cookies is None when called, and is set after call.
         """
         if self._cookies is not None:
-            raise Exception('Clear cookie before asking update')
+            raise ToutSurMonEauError('INTERNAL ERROR: Clear cookie before asking update of it')
         # go to login page, retrieve token and login cookies
         csrf_token = self._find_in_page(
             PAGE_LOGIN, CSRF_TOKEN_REGEX).encode('utf-8').decode('unicode-escape')
-        # former regex: "_csrf_token" value="([^"]+)"
         login_cookies = self._cookies
         # reset cookies , as it is not yet the auth cookies
         self._cookies = None
@@ -137,43 +140,44 @@ class ToutSurMonEau():
             'tsme_user_login[_password]': self._password
         }
         # get session cookie used to be authenticated
-        response = self._session.post(
-            self._base_url + '/' + PAGE_LOGIN,
-            data=data,
-            cookies=login_cookies,
-            allow_redirects=False)
+        response = self._load_page(
+            PAGE_LOGIN, cookies=login_cookies, data=data)
         the_cookies = response.cookies.get_dict()
         if (PAGE_DASHBOARD not in response.content.decode('utf-8')) or (SESSION_ID not in the_cookies):
-            raise Exception(
+            raise ToutSurMonEauError(
                 'Login error: Please check your username/password.')
         # build cookie used when authenticated
         self._cookies = {SESSION_ID: the_cookies[SESSION_ID]}
 
     def _call_api(self, endpoint) -> dict:
-        """Call the API, regenerate cookie if necessary"""
+        """Call the specified API
+
+        Regenerate cookie if necessary
+        @return the dict of result
+        """
         _LOGGER.debug(f"Calling: {endpoint}")
         retried = False
         while True:
             if self._cookies is None:
                 self._generate_access_cookie()
-            response = self._session_get(endpoint, cookies=self._cookies)
+            response = self._load_page(endpoint, cookies=self._cookies)
             if 'application/json' in response.headers.get('content-type'):
                 if self._auto_close:
                     self.close_session()
                 result = response.json()
                 if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
-                    raise Exception(result[1])
+                    raise ToutSurMonEauError(result[1])
                 _LOGGER.debug(f"Result: {result}")
                 return result
             if retried:
-                raise Exception('Failed refreshing cookie')
+                raise ToutSurMonEauError('Failed refreshing cookie')
             retried = True
             # reset cookie to regenerate
             self._cookies = None
 
     def _convert_volume(self, volume: float) -> Union[float, int]:
         """
-        Converts volume to desired unit (m3 or litre)
+        @return volume converted to desired unit (m3 or litre)
         """
         if self._use_litre:
             return int(1000*volume)
@@ -188,7 +192,8 @@ class ToutSurMonEau():
         return int(value) != 0
 
     def meter_id(self) -> str:
-        """
+        """Water meter identifier
+
         @return subscriber's water meter identifier
         If it was not provided in initialization, then it is read mon the web site.
         """
@@ -201,8 +206,13 @@ class ToutSurMonEau():
         return self._id
 
     def contracts(self) -> dict:
+        """List of contracts for the user.
+        
+        @return the list of contracts associated to the calling user.
+        """
         contract_list = self._call_api(API_ENDPOINT_CONTRACT)
         for contract in contract_list:
+            # remove keys not used
             for key in ['website-link', 'searchData']:
                 if key in contract:
                     del contract[key]
@@ -215,7 +225,7 @@ class ToutSurMonEau():
         @return [dict] [day_in_month]={day:, total:} daily usage for the specified month
         """
         if not isinstance(report_date, datetime.date):
-            raise Exception('provide a date')
+            raise ToutSurMonEauError('Argument: Provide a date object')
         try:
             daily = self._call_api(
                 f"{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{self.meter_id()}")
@@ -244,7 +254,7 @@ class ToutSurMonEau():
         @return [Hash] current month
         """
         monthly = self._call_api(
-            API_ENDPOINT_MONTHLY + '/' + self.meter_id())
+            f"{API_ENDPOINT_MONTHLY}/{self.meter_id()}")
         result = {
             'highest_monthly_volume': self._convert_volume(monthly.pop()),
             'last_year_volume':       self._convert_volume(monthly.pop()),
@@ -285,10 +295,10 @@ class ToutSurMonEau():
             reading_date = reading_date - datetime.timedelta(days=1)
             if reading_date.day > test_day:
                 month_data = None
-        raise Exception(
+        raise ToutSurMonEauError(
             f"Cannot get latest meter value in last {METER_RETRIEVAL_MAX_DAYS_BACK} days")
 
-    def check_credentials(self):
+    def check_credentials(self) -> bool:
         """
         @return True if credentials are valid
         """
@@ -298,12 +308,12 @@ class ToutSurMonEau():
             return False
         return True
 
-    def update(self):
+    def update(self) -> dict:
         """
         @return a summary of collected data.
         """
         today = datetime.date.today()
-        self.attributes['attribution'] = "Data provided by "+self._base_url
+        self.attributes['attribution'] = f"Data provided by {self._base_url}"
         if self._compatibility:
             summary = self.monthly_recent()
             self.attributes['lastYearOverAll'] = summary['last_year_volume']
@@ -327,7 +337,7 @@ class ToutSurMonEau():
                 'absolute', self.attributes['this_month'])['volume']
         return self.attributes
 
-    def close_session(self):
+    def close_session(self) -> None:
         """Close current session."""
         if self._session is not None:
             self._session.close()

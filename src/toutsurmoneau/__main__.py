@@ -18,9 +18,11 @@ def command_line():
     parser.add_argument('-c', '--meter_id',
                         required=False, help='Water Meter Id')
     parser.add_argument('-P', '--provider',
-                        required=False, help='Provider name')
+                        required=False, help='Provider name or URL')
     parser.add_argument('-e', '--execute',
                         required=False, help='Command to execute (attributes,contracts,meter_id,latest_meter_reading,monthly_recent,daily_for_month,check_credentials)')
+    parser.add_argument('-d', '--data',
+                        required=False, help='Additional data for the command (e.g. date for daily_for_month)')
     parser.add_argument(
         '--compat', action='store_true', default=False)
     parser.add_argument(
@@ -52,7 +54,11 @@ def command_line():
         elif command == 'monthly_recent':
             data = client.monthly_recent()
         elif command == 'daily_for_month':
-            data = client.daily_for_month(datetime.date.today())
+            if args.data is None:
+                test_date = datetime.date.today()
+            else:
+                test_date = datetime.datetime.strptime(args.data, '%Y%m').date()
+            data = client.daily_for_month(test_date)
         else:
             raise Exception('No such command: '+command)
         yaml.dump(data, sys.stdout)

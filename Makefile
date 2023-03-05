@@ -19,6 +19,9 @@ test:
 		    $$toutsurmoneau -u $$U -p $$P -e $$test_id $$compat;\
 		done;\
 	done
+	. private/env.sh && \
+	two_month_earlier=$$(date -v1d -v-65d +%Y%m) && \
+	$$toutsurmoneau -u $$U -p $$P -e daily_for_month -d $${two_month_earlier}
 clean:
 	rm -fr dist
 	find . -name '*.egg-info' -print0|xargs -0 rm -fr
