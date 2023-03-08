@@ -1,10 +1,10 @@
 all::
 build: clean
 	python3 -m pip install --upgrade build
-	python3 -m build src
+	python3 -m build .
+publish: build
 	pip install twine
 	twine check dist/*
-publish: build
 	twine upload --non-interactive dist/*
 install: clean build
 	python3 -m pip install -e .
