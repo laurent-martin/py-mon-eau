@@ -2,15 +2,16 @@ import datetime
 import logging
 import re
 from typing import Optional, Union
-# import asyncio
 import aiohttp
+from .errors import ClientError
 
 _LOGGER = logging.getLogger(__name__)
 # supported providers
 PROVIDER_URLS = {
-    'Suez': 'https://www.toutsurmoneau.fr/mon-compte-en-ligne',
-    'Eau Olivet': 'https://www.eau-olivet.fr/mon-compte-en-ligne'
+    'Suez': 'https://www.toutsurmoneau.fr',
+    'Eau Olivet': 'https://www.eau-olivet.fr'
 }
+MAIN_URL_PATH = 'mon-compte-en-ligne'
 PAGE_LOGIN = 'je-me-connecte'
 PAGE_DASHBOARD = 'tableau-de-bord'
 PAGE_CONSUMPTION = 'historique-de-consommation-tr'
@@ -29,52 +30,37 @@ MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
 METER_RETRIEVAL_MAX_DAYS_BACK = 3
 
 
-class ToutSurMonEauError(Exception):
-    """Raised a problem occurs while calling the API"""
-    pass
-
-
-class ToutSurMonEauAsync():
+class AsyncClient():
     """
     Retrieve subscriber and meter information from Suez on toutsurmoneau.fr
     """
 
-    def __init__(self, username: str, password: str, session: aiohttp.ClientSession, meter_id: Optional[str] = None, provider: Optional[str] = None, use_litre: bool = True, compatibility: bool = True) -> None:
+    def __init__(self, username: str, password: str, session: Optional[aiohttp.ClientSession] = None, meter_id: Optional[str] = None, provider: Optional[str] = None, use_litre: bool = True) -> None:
         """
         Initialize the client object.
         @param username account id
         @param password account password
         @param meter_id water meter ID (optional)
-        @param provider name of provider from PROVIDER_URLS, or URL of provider
+        @param provider name of provider from PROVIDER_URLS (e.g. 'Suez'), or base URL of provider: 'https://www.toutsurmoneau.fr/mon-compte-en-ligne'
         @param session an HTTP session
         @param use_litre use Litre a unit if True, else use api native unit (cubic meter)
-        @param compatibility if True, return values compatible with pySuez
         If meter_id is None, it will be read from the web.
         """
-        # updated when update() is called
-        self.attributes = {}
-        # current meter reading
-        self.state = {}
-        # Legacy, not used:
-        self.success = True
-        # Legacy, not used:
-        self.data = {}
         # store useful parameters
         self._username = username
         self._password = password
         self._id = meter_id
         self._session = session
+        if self._session is None:
+            self._session = aiohttp.ClientSession()
         self._cookies = None
-        self._compatibility = compatibility
         self._use_litre = use_litre
-        if self._compatibility:
-            self._use_litre = True
         # Default value
         if provider is None:
             provider = 'Suez'
         # If name in table, use URL, or the provider is the URL
         if provider in PROVIDER_URLS:
-            self._base_url = PROVIDER_URLS[provider]
+            self._base_url = f"{PROVIDER_URLS[provider]}/{MAIN_URL_PATH}"
         else:
             self._base_url = provider
 
@@ -108,7 +94,7 @@ class ToutSurMonEauAsync():
             # get meter id from page
             matches = re.compile(reg_ex).search(page_content)
             if matches is None:
-                raise ToutSurMonEauError(f"Could not find {reg_ex} in {page}")
+                raise ClientError(f"Could not find {reg_ex} in {page}")
             result = matches.group(1)
             # when not authenticated, cookies are used for authentication
             if self._cookies is None:
@@ -141,11 +127,11 @@ class ToutSurMonEauAsync():
             the_cookies = self._session.cookie_jar.filter_cookies(
                 self._base_url)
             if SESSION_ID not in the_cookies:
-                raise ToutSurMonEauError(
+                raise ClientError(
                     f'Login error: no {SESSION_ID} found in cookies for {PAGE_LOGIN}.')
             page_content = await response.text(encoding='utf-8')
             if PAGE_DASHBOARD not in page_content:
-                raise ToutSurMonEauError(
+                raise ClientError(
                     f'Login error: no {PAGE_DASHBOARD} found in {PAGE_LOGIN}.')
             # build cookie used when authenticated
             self._cookies = {SESSION_ID: the_cookies[SESSION_ID]}
@@ -163,7 +149,7 @@ class ToutSurMonEauAsync():
             async with self._session.get(self._full_url(endpoint), cookies=self._cookies) as response:
                 if 'application/json' not in response.headers.get('content-type'):
                     if retried:
-                        raise ToutSurMonEauError('Failed refreshing cookie')
+                        raise ClientError('Failed refreshing cookie')
                     retried = True
                     # reset cookie to regenerate
                     self._cookies = None
@@ -171,7 +157,7 @@ class ToutSurMonEauAsync():
                     continue
                 result = await response.json()
             if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
-                raise ToutSurMonEauError(result[1])
+                raise ClientError(result[1])
             _LOGGER.debug("Result: %s", result)
             return result
 
@@ -208,10 +194,10 @@ class ToutSurMonEauAsync():
         @return [dict] [day_in_month]={day:, total:} daily usage for the specified month
         """
         if not isinstance(report_date, datetime.date):
-            raise ToutSurMonEauError('Argument: Provide a date object')
+            raise ClientError('Argument: Provide a date object')
         try:
             daily = await self._async_call_api(
-                f"{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{self.meter_id()}")
+                f"{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{await self.async_meter_id()}")
         except Exception as e:
             if throw:
                 raise e
@@ -237,7 +223,7 @@ class ToutSurMonEauAsync():
         @return [Hash] current month
         """
         monthly = await self._async_call_api(
-            f"{API_ENDPOINT_MONTHLY}/{self.meter_id()}")
+            f"{API_ENDPOINT_MONTHLY}/{await self.async_meter_id()}")
         result = {
             'highest_monthly_volume': self._convert_volume(monthly.pop()),
             'last_year_volume':       self._convert_volume(monthly.pop()),
@@ -278,7 +264,7 @@ class ToutSurMonEauAsync():
             reading_date = reading_date - datetime.timedelta(days=1)
             if reading_date.day > test_day:
                 month_data = None
-        raise ToutSurMonEauError(
+        raise ClientError(
             f"Cannot get latest meter value in last {METER_RETRIEVAL_MAX_DAYS_BACK} days")
 
     async def async_check_credentials(self) -> bool:
@@ -291,31 +277,9 @@ class ToutSurMonEauAsync():
             return False
         return True
 
-    async def async_update(self) -> dict:
-        """
-        @return a summary of collected data.
-        """
-        today = datetime.date.today()
-        self.attributes['attribution'] = f"Data provided by {self._base_url}"
-        if self._compatibility:
-            summary = await self.async_monthly_recent()
-            self.attributes['lastYearOverAll'] = summary['last_year_volume']
-            self.attributes['thisYearOverAll'] = summary['this_year_volume']
-            self.attributes['highestMonthlyConsumption'] = summary['highest_monthly_volume']
-            self.attributes['history'] = summary['monthly']
-            self.attributes['thisMonthConsumption'] = await self.async_daily_for_month(
-                today)
-            self.attributes['previousMonthConsumption'] = await self.async_daily_for_month(
-                datetime.date(today.year, today.month - 1, 1))
-            self.state = await self.async_latest_meter_reading(
-                'daily', self.attributes['thisMonthConsumption'])['volume']
-        else:
-            self.attributes['contracts'] = self.contracts()
-            self.attributes['monthly'] = await self.async_monthly_recent()
-            self.attributes['this_month'] = await self.async_daily_for_month(
-                datetime.date.today())
-            self.attributes['latest_daily'] = await self.async_latest_meter_reading(
-                'daily', self.attributes['this_month'])
-            self.state = await self.async_latest_meter_reading(
-                'absolute', self.attributes['this_month'])['volume']
-        return self.attributes
+
+    async def async_close_session(self) -> None:
+        """Close current session."""
+        if self._session is not None:
+            await self._session.close()
+            self._session = None

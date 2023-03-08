@@ -3,6 +3,7 @@ import requests
 import logging
 import re
 from typing import Optional, Union
+from .errors import ClientError
 
 _LOGGER = logging.getLogger(__name__)
 # supported providers
@@ -28,12 +29,7 @@ MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
 METER_RETRIEVAL_MAX_DAYS_BACK = 3
 
 
-class ToutSurMonEauError(Exception):
-    """Raised a problem occurs while calling the API"""
-    pass
-
-
-class ToutSurMonEau():
+class Client():
     """
     Retrieve subscriber and meter information from Suez on toutsurmoneau.fr
     """
@@ -117,7 +113,7 @@ class ToutSurMonEau():
         # get meter id from page
         matches = re.compile(reg_ex).search(response.content.decode('utf-8'))
         if matches is None:
-            raise ToutSurMonEauError(f"Could not find {reg_ex} in {page}")
+            raise ClientError(f"Could not find {reg_ex} in {page}")
         result = matches.group(1)
         # when not authenticated, cookies are used for authentication
         if self._cookies is None:
@@ -150,11 +146,11 @@ class ToutSurMonEau():
             PAGE_LOGIN, cookies=login_cookies, data=data)
         the_cookies = response.cookies.get_dict()
         if SESSION_ID not in the_cookies:
-            raise ToutSurMonEauError(
+            raise ClientError(
                 f'Login error: no {SESSION_ID} found in cookies for {PAGE_LOGIN}.')
         page_content = response.content.decode('utf-8')
         if PAGE_DASHBOARD not in page_content:
-            raise ToutSurMonEauError(
+            raise ClientError(
                 f'Login error: no {PAGE_DASHBOARD} found in {PAGE_LOGIN}.')
         # build cookie used when authenticated
         self._cookies = {SESSION_ID: the_cookies[SESSION_ID]}
@@ -172,7 +168,7 @@ class ToutSurMonEau():
             response = self._load_page(endpoint, cookies=self._cookies)
             if 'application/json' not in response.headers.get('content-type'):
                 if retried:
-                    raise ToutSurMonEauError('Failed refreshing cookie')
+                    raise ClientError('Failed refreshing cookie')
                 retried = True
                 # reset cookie to regenerate
                 self._cookies = None
@@ -180,7 +176,7 @@ class ToutSurMonEau():
                 continue
             result = response.json()
             if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
-                raise ToutSurMonEauError(result[1])
+                raise ClientError(result[1])
             _LOGGER.debug("Result: %s", result)
             return result
 
@@ -217,7 +213,7 @@ class ToutSurMonEau():
         @return [dict] [day_in_month]={day:, total:} daily usage for the specified month
         """
         if not isinstance(report_date, datetime.date):
-            raise ToutSurMonEauError('Argument: Provide a date object')
+            raise ClientError('Argument: Provide a date object')
         try:
             daily = self._call_api(
                 f"{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{self.meter_id()}")
@@ -287,7 +283,7 @@ class ToutSurMonEau():
             reading_date = reading_date - datetime.timedelta(days=1)
             if reading_date.day > test_day:
                 month_data = None
-        raise ToutSurMonEauError(
+        raise ClientError(
             f"Cannot get latest meter value in last {METER_RETRIEVAL_MAX_DAYS_BACK} days")
 
     def check_credentials(self) -> bool:

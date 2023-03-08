@@ -2,7 +2,12 @@
 
 Version 0.0.14
 
-Get your water meter data from your online Suez account (<www.toutsurmoneau.fr>)
+Get your water meter data from your online Suez account (<www.toutsurmoneau.fr>) as well as other sites using the same interface.
+
+Two Classes are provided:
+
+- `Client` is a legacy synchronous client, compatible with module `pySuez`
+- `AsyncClient` is an asynchronous client
 
 ## Installation
 
@@ -18,15 +23,34 @@ toutsurmoneau [-h] -u _user_name_here_ -p _password_here_ [-c _meter_id_] [-e _a
 
 ## API Usage
 
+### Async use
+
+```python
+import toutsurmoneau
+import aiohttp
+import asyncio
+
+
+async def the_job():
+    async with aiohttp.ClientSession() as session:
+        obj = toutsurmoneau.AsyncClient(
+            username='_username_here_', password='_password_here_', session=session)
+        return await obj.async_contracts()
+
+print(f">>{asyncio.run(the_job())}")
+```
+
+### Sync use
+
 ```python
 import toutsurmoneau
 
-client = toutsurmoneau.ToutSurMonEau('_user_name_here_', '_password_here_')
+client = toutsurmoneau.Client('_username_here_', '_password_here_')
 
-print(client.latest_meter_reading())
+print(f">>{client.contracts()}")
 ```
 
-The object tries to mimic `pySuez` when option `compatibility` = `True`.
+The sync object returns the same values as `pySuez`.
 
 ## History
 
