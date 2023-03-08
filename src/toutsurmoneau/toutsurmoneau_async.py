@@ -1,8 +1,9 @@
 import datetime
-import requests
 import logging
 import re
 from typing import Optional, Union
+# import asyncio
+import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
 # supported providers
@@ -33,12 +34,12 @@ class ToutSurMonEauError(Exception):
     pass
 
 
-class ToutSurMonEau():
+class ToutSurMonEauAsync():
     """
     Retrieve subscriber and meter information from Suez on toutsurmoneau.fr
     """
 
-    def __init__(self, username, password: str, meter_id: Optional[str] = None, provider: Optional[str] = None, session=None, timeout=None, use_litre=True, compatibility=True):
+    def __init__(self, username: str, password: str, session: aiohttp.ClientSession, meter_id: Optional[str] = None, provider: Optional[str] = None, use_litre: bool = True, compatibility: bool = True) -> None:
         """
         Initialize the client object.
         @param username account id
@@ -46,7 +47,6 @@ class ToutSurMonEau():
         @param meter_id water meter ID (optional)
         @param provider name of provider from PROVIDER_URLS, or URL of provider
         @param session an HTTP session
-        @param timeout HTTP timeout
         @param use_litre use Litre a unit if True, else use api native unit (cubic meter)
         @param compatibility if True, return values compatible with pySuez
         If meter_id is None, it will be read from the web.
@@ -64,9 +64,6 @@ class ToutSurMonEau():
         self._password = password
         self._id = meter_id
         self._session = session
-        if self._session is None:
-            self._session = requests.Session()
-        self._timeout = timeout
         self._cookies = None
         self._compatibility = compatibility
         self._use_litre = use_litre
@@ -101,37 +98,31 @@ class ToutSurMonEau():
         """
         return int(value) != 0
 
-    def _load_page(self, endpoint, cookies=None, data=None) -> requests.Response:
-        """Call GET (data=None) or POST on specified endpoint (path)"""
-        if data is None:
-            return self._session.get(self._full_url(endpoint), cookies=cookies, timeout=self._timeout)
-        else:
-            return self._session.post(self._full_url(endpoint), cookies=cookies, timeout=self._timeout, data=data, allow_redirects=False)
-
-    def _find_in_page(self, page: str, reg_ex: str) -> str:
+    async def _async_find_in_page(self, page: str, reg_ex: str) -> str:
         """
         Extract the regex from the specified page.
         If _cookies is None, then it sets it, else it remains unchanged.
         """
-        response = self._load_page(page, cookies=self._cookies)
-        # get meter id from page
-        matches = re.compile(reg_ex).search(response.content.decode('utf-8'))
-        if matches is None:
-            raise ToutSurMonEauError(f"Could not find {reg_ex} in {page}")
-        result = matches.group(1)
-        # when not authenticated, cookies are used for authentication
-        if self._cookies is None:
-            self._cookies = response.cookies
-        return result
+        async with self._session.get(self._full_url(page), cookies=self._cookies) as response:
+            page_content = await response.text(encoding='utf-8')
+            # get meter id from page
+            matches = re.compile(reg_ex).search(page_content)
+            if matches is None:
+                raise ToutSurMonEauError(f"Could not find {reg_ex} in {page}")
+            result = matches.group(1)
+            # when not authenticated, cookies are used for authentication
+            if self._cookies is None:
+                self._cookies = response.cookies
+            return result
 
-    def _ensure_logged_in(self) -> None:
+    async def _async_ensure_logged_in(self) -> None:
         """
         Generate authentication cookie if self._cookies is None.
         """
         if self._cookies is not None:
             return
         # go to login page, retrieve token and login cookies
-        csrf_token = self._find_in_page(
+        csrf_token = await self._async_find_in_page(
             PAGE_LOGIN, CSRF_TOKEN_REGEX)
         login_cookies = self._cookies
         # reset cookies , as it is not yet the auth cookies
@@ -146,20 +137,20 @@ class ToutSurMonEau():
             'tsme_user_login[_password]': self._password
         }
         # get session cookie used to be authenticated
-        response = self._load_page(
-            PAGE_LOGIN, cookies=login_cookies, data=data)
-        the_cookies = response.cookies.get_dict()
-        if SESSION_ID not in the_cookies:
-            raise ToutSurMonEauError(
-                f'Login error: no {SESSION_ID} found in cookies for {PAGE_LOGIN}.')
-        page_content = response.content.decode('utf-8')
-        if PAGE_DASHBOARD not in page_content:
-            raise ToutSurMonEauError(
-                f'Login error: no {PAGE_DASHBOARD} found in {PAGE_LOGIN}.')
-        # build cookie used when authenticated
-        self._cookies = {SESSION_ID: the_cookies[SESSION_ID]}
+        async with self._session.post(self._full_url(PAGE_LOGIN), cookies=login_cookies, data=data, allow_redirects=False) as response:
+            the_cookies = self._session.cookie_jar.filter_cookies(
+                self._base_url)
+            if SESSION_ID not in the_cookies:
+                raise ToutSurMonEauError(
+                    f'Login error: no {SESSION_ID} found in cookies for {PAGE_LOGIN}.')
+            page_content = await response.text(encoding='utf-8')
+            if PAGE_DASHBOARD not in page_content:
+                raise ToutSurMonEauError(
+                    f'Login error: no {PAGE_DASHBOARD} found in {PAGE_LOGIN}.')
+            # build cookie used when authenticated
+            self._cookies = {SESSION_ID: the_cookies[SESSION_ID]}
 
-    def _call_api(self, endpoint) -> dict:
+    async def _async_call_api(self, endpoint) -> dict:
         """Call the specified API
 
         Regenerate cookie if necessary
@@ -168,41 +159,41 @@ class ToutSurMonEau():
         _LOGGER.debug("Calling: %s", endpoint)
         retried = False
         while True:
-            self._ensure_logged_in()
-            response = self._load_page(endpoint, cookies=self._cookies)
-            if 'application/json' not in response.headers.get('content-type'):
-                if retried:
-                    raise ToutSurMonEauError('Failed refreshing cookie')
-                retried = True
-                # reset cookie to regenerate
-                self._cookies = None
-                # try again
-                continue
-            result = response.json()
+            await self._async_ensure_logged_in()
+            async with self._session.get(self._full_url(endpoint), cookies=self._cookies) as response:
+                if 'application/json' not in response.headers.get('content-type'):
+                    if retried:
+                        raise ToutSurMonEauError('Failed refreshing cookie')
+                    retried = True
+                    # reset cookie to regenerate
+                    self._cookies = None
+                    # try again
+                    continue
+                result = await response.json()
             if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
                 raise ToutSurMonEauError(result[1])
             _LOGGER.debug("Result: %s", result)
             return result
 
-    def meter_id(self) -> str:
+    async def async_meter_id(self) -> str:
         """Water meter identifier
 
         @return subscriber's water meter identifier
         If it was not provided in initialization, then it is read mon the web site.
         """
         if self._id is None or "".__eq__(self._id):
-            self._ensure_logged_in()
+            await self._async_ensure_logged_in()
             # Read meter ID
-            self._id = self._find_in_page(
+            self._id = await self._async_find_in_page(
                 PAGE_CONSUMPTION, '/month/([0-9]+)')
         return self._id
 
-    def contracts(self) -> dict:
+    async def async_contracts(self) -> dict:
         """List of contracts for the user.
 
         @return the list of contracts associated to the calling user.
         """
-        contract_list = self._call_api(API_ENDPOINT_CONTRACT)
+        contract_list = await self._async_call_api(API_ENDPOINT_CONTRACT)
         for contract in contract_list:
             # remove keys not used
             for key in ['website-link', 'searchData']:
@@ -210,7 +201,7 @@ class ToutSurMonEau():
                     del contract[key]
         return contract_list
 
-    def daily_for_month(self, report_date: datetime.date, throw: bool = False) -> dict:
+    async def async_daily_for_month(self, report_date: datetime.date, throw: bool = False) -> dict:
         """
         @param report_date [datetime.date] specify year/month for report, e.g. built with Date.new(year,month,1)
         @param throw set to True to get an exception if there is no data for that date
@@ -219,7 +210,7 @@ class ToutSurMonEau():
         if not isinstance(report_date, datetime.date):
             raise ToutSurMonEauError('Argument: Provide a date object')
         try:
-            daily = self._call_api(
+            daily = await self._async_call_api(
                 f"{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{self.meter_id()}")
         except Exception as e:
             if throw:
@@ -241,11 +232,11 @@ class ToutSurMonEau():
         _LOGGER.debug("daily_for_month: %s", result)
         return result
 
-    def monthly_recent(self) -> dict:
+    async def async_monthly_recent(self) -> dict:
         """
         @return [Hash] current month
         """
-        monthly = self._call_api(
+        monthly = await self._async_call_api(
             f"{API_ENDPOINT_MONTHLY}/{self.meter_id()}")
         result = {
             'highest_monthly_volume': self._convert_volume(monthly.pop()),
@@ -271,7 +262,7 @@ class ToutSurMonEau():
                     i[2])
         return result
 
-    def latest_meter_reading(self, what='absolute', month_data=None) -> Union[float, int]:
+    async def async_latest_meter_reading(self, what='absolute', month_data=None) -> Union[float, int]:
         """
         @return the latest meter reading
         """
@@ -281,7 +272,7 @@ class ToutSurMonEau():
             test_day = reading_date.day
             _LOGGER.debug("Trying day: %d", test_day)
             if month_data is None:
-                month_data = self.daily_for_month(reading_date)
+                month_data = await self.async_daily_for_month(reading_date)
             if test_day in month_data[what]:
                 return {'date': reading_date, 'volume': month_data[what][test_day]}
             reading_date = reading_date - datetime.timedelta(days=1)
@@ -290,47 +281,41 @@ class ToutSurMonEau():
         raise ToutSurMonEauError(
             f"Cannot get latest meter value in last {METER_RETRIEVAL_MAX_DAYS_BACK} days")
 
-    def check_credentials(self) -> bool:
+    async def async_check_credentials(self) -> bool:
         """
         @return True if credentials are valid
         """
         try:
-            self.contracts()
+            await self.async_contracts()
         except Exception:
             return False
         return True
 
-    def update(self) -> dict:
+    async def async_update(self) -> dict:
         """
         @return a summary of collected data.
         """
         today = datetime.date.today()
         self.attributes['attribution'] = f"Data provided by {self._base_url}"
         if self._compatibility:
-            summary = self.monthly_recent()
+            summary = await self.async_monthly_recent()
             self.attributes['lastYearOverAll'] = summary['last_year_volume']
             self.attributes['thisYearOverAll'] = summary['this_year_volume']
             self.attributes['highestMonthlyConsumption'] = summary['highest_monthly_volume']
             self.attributes['history'] = summary['monthly']
-            self.attributes['thisMonthConsumption'] = self.daily_for_month(
+            self.attributes['thisMonthConsumption'] = await self.async_daily_for_month(
                 today)
-            self.attributes['previousMonthConsumption'] = self.daily_for_month(
+            self.attributes['previousMonthConsumption'] = await self.async_daily_for_month(
                 datetime.date(today.year, today.month - 1, 1))
-            self.state = self.latest_meter_reading(
+            self.state = await self.async_latest_meter_reading(
                 'daily', self.attributes['thisMonthConsumption'])['volume']
         else:
             self.attributes['contracts'] = self.contracts()
-            self.attributes['monthly'] = self.monthly_recent()
-            self.attributes['this_month'] = self.daily_for_month(
+            self.attributes['monthly'] = await self.async_monthly_recent()
+            self.attributes['this_month'] = await self.async_daily_for_month(
                 datetime.date.today())
-            self.attributes['latest_daily'] = self.latest_meter_reading(
+            self.attributes['latest_daily'] = await self.async_latest_meter_reading(
                 'daily', self.attributes['this_month'])
-            self.state = self.latest_meter_reading(
+            self.state = await self.async_latest_meter_reading(
                 'absolute', self.attributes['this_month'])['volume']
         return self.attributes
-
-    def close_session(self) -> None:
-        """Close current session."""
-        if self._session is not None:
-            self._session.close()
-            self._session = None

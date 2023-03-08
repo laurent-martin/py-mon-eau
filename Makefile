@@ -1,7 +1,7 @@
 all::
 build: clean
 	python3 -m pip install --upgrade build
-	python3 -m build
+	python3 -m build src
 	pip install twine
 	twine check dist/*
 publish: build
@@ -13,10 +13,13 @@ fulltest: install test
 test:
 	python3 --version
 	. private/env.sh && $$toutsurmoneau -h
-	set -e;. private/env.sh;for compat in '' --compat;do \
+	set -e;. private/env.sh;\
+	for sync in '--doasync' '';do \
+	for compat in '' --compat;do \
 		for test_id in attributes meter_id contracts latest_meter_reading monthly_recent daily_for_month check_credentials;do \
 		    echo "== $${test_id} ($${compat}) =========================================================";\
 		    $$toutsurmoneau -u $$U -p $$P -e $$test_id $$compat;\
+		done;\
 		done;\
 	done
 	. private/env.sh && \
