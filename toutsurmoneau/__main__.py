@@ -7,12 +7,6 @@ import logging
 import asyncio
 import aiohttp
 
-_LOGGER = logging.getLogger('aiohttp.client')
-
-
-async def on_request_start(session, context, params):
-    _LOGGER.debug(f'Starting request <%s>', params)
-
 
 def command_line():
     """Main function"""
@@ -26,7 +20,7 @@ def command_line():
     parser.add_argument('-P', '--provider',
                         required=False, help='Provider name or URL')
     parser.add_argument('-e', '--execute',
-                        required=False, default='attributes', help='Command to execute (attributes,contracts,meter_id,latest_meter_reading,monthly_recent,daily_for_month,check_credentials)')
+                        required=False, default='check_credentials', help='Command to execute (attributes,contracts,meter_id,latest_meter_reading,monthly_recent,daily_for_month,check_credentials)')
     parser.add_argument('-d', '--data',
                         required=False, help='Additional data for the command (e.g. date for daily_for_month)')
     parser.add_argument(
@@ -38,13 +32,13 @@ def command_line():
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
     if args.legacy:
-        result = execute_legacy(args)
+        result = legacy_execute(args)
     else:
         result = asyncio.run(async_execute(args))
     yaml.dump(result, sys.stdout)
 
 
-def execute_legacy(args):
+def legacy_execute(args):
     client = toutsurmoneau.Client(args.username, args.password,
                                   args.meter_id, args.provider)
     try:
@@ -63,8 +57,18 @@ def execute_legacy(args):
         client.close_session()
 
 
+_LOGGER = logging.getLogger('aiohttp.client')
+
+
+async def on_request_start(session, context, params):
+    _LOGGER.debug(f'Starting request <%s>', params)
+
+
 async def async_execute(args):
-    async with aiohttp.ClientSession() as session:
+    trace_config = aiohttp.TraceConfig()
+    if args.debug:
+        trace_config.on_request_start.append(on_request_start)
+    async with aiohttp.ClientSession(trace_configs=[trace_config]) as session:
         client = toutsurmoneau.AsyncClient(username=args.username, password=args.password,
                                            meter_id=args.meter_id, provider=args.provider, session=session)
         if args.execute == 'check_credentials':
@@ -86,7 +90,7 @@ async def async_execute(args):
             data = await client.async_daily_for_month(test_date)
         else:
             raise Exception('No such command: '+args.execute)
-        yaml.dump(data, sys.stdout)
+        return data
 
 
 if __name__ == '__main__':

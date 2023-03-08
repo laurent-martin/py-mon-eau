@@ -35,7 +35,7 @@ class AsyncClient():
     Retrieve subscriber and meter information from Suez on toutsurmoneau.fr
     """
 
-    def __init__(self, username: str, password: str, session: Optional[aiohttp.ClientSession] = None, meter_id: Optional[str] = None, provider: Optional[str] = None, use_litre: bool = True) -> None:
+    def __init__(self, username: str, password: str, session: aiohttp.ClientSession, meter_id: Optional[str] = None, provider: Optional[str] = None, use_litre: bool = True) -> None:
         """
         Initialize the client object.
         @param username account id
@@ -51,8 +51,6 @@ class AsyncClient():
         self._password = password
         self._id = meter_id
         self._session = session
-        if self._session is None:
-            self._session = aiohttp.ClientSession()
         self._cookies = None
         self._use_litre = use_litre
         # Default value
@@ -276,10 +274,3 @@ class AsyncClient():
         except Exception:
             return False
         return True
-
-
-    async def async_close_session(self) -> None:
-        """Close current session."""
-        if self._session is not None:
-            await self._session.close()
-            self._session = None
