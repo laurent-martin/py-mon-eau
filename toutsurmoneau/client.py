@@ -15,7 +15,7 @@ class Client():
         """Initialize the client object.
 
         If meter_id is None, A default value will be used from the web account.
-        
+
         @param username account id
         @param password account password
         @param meter_id water meter ID (optional)
@@ -34,15 +34,11 @@ class Client():
         self._async_client = AsyncClient(
             username=username, password=password, session=None, meter_id=meter_id, provider=provider, use_litre=True)
 
-    def check_credentials(self) -> bool:
-        """
-        @return True if credentials are valid
-        """
-        return asyncio.run(self._async_client.async_check_credentials())
-
-    async def _async_update(self):
+    async def _async_task(self, check_only: bool = False):
         async with aiohttp.ClientSession() as session:
             self._async_client._session = session
+            if check_only:
+                return await self._async_client.async_check_credentials()
             today = datetime.date.today()
             self.attributes['attribution'] = f"Data provided by {self._async_client._base_url}"
             summary = await self._async_client.async_monthly_recent()
@@ -57,11 +53,17 @@ class Client():
             self.state = (await self._async_client.async_latest_meter_reading(
                 'daily', self.attributes['thisMonthConsumption']))['volume']
 
+    def check_credentials(self) -> bool:
+        """
+        @return True if credentials are valid
+        """
+        return asyncio.run(self._async_task(True))
+
     def update(self) -> dict:
         """
         @return a summary of collected data.
         """
-        asyncio.run(self._async_update())
+        asyncio.run(self._async_task())
         return self.attributes
 
     def close_session(self) -> None:

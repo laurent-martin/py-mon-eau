@@ -271,6 +271,7 @@ class AsyncClient():
         """
         try:
             await self.async_contracts()
-        except Exception:
+        except Exception as error:
+            _LOGGER.debug("Login failed: %s", error)
             return False
         return True
