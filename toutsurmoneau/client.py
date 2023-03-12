@@ -32,7 +32,7 @@ class Client():
         # Legacy, not used:
         self.data = {}
         self._async_client = AsyncClient(
-            username=username, password=password, session=None, meter_id=meter_id, provider=provider, use_litre=True)
+            username=username, password=password, session=None, meter_id=meter_id, url=provider, use_litre=True)
 
     async def _async_task(self, check_only: bool = False):
         async with aiohttp.ClientSession() as session:

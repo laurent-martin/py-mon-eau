@@ -1,17 +1,13 @@
 import datetime
 import logging
 import re
-from typing import Optional, Union
 import aiohttp
+from typing import Optional, Union, Any
+from urllib.parse import urlparse
 from .errors import ClientError
+from .const import KNOWN_PROVIDER_URLS
 
 _LOGGER = logging.getLogger(__name__)
-# supported providers
-PROVIDER_URLS = {
-    'Suez': 'https://www.toutsurmoneau.fr',
-    'Eau Olivet': 'https://www.eau-olivet.fr'
-}
-MAIN_URL_PATH = 'mon-compte-en-ligne'
 PAGE_LOGIN = 'je-me-connecte'
 PAGE_DASHBOARD = 'tableau-de-bord'
 PAGE_CONSUMPTION = 'historique-de-consommation-tr'
@@ -20,7 +16,7 @@ API_ENDPOINT_DAILY = 'statJData'
 # monthly (Mois) : /meter_id : Array(mmm. yy, monthly volume, cumulative volume, Mmmmm YYYY)
 API_ENDPOINT_MONTHLY = 'statMData'
 API_ENDPOINT_CONTRACT = 'donnees-contrats'
-SESSION_ID = 'eZSESSID'
+AUTHENTICATION_COOKIE = 'eZSESSID'
 # regex is before utf8 encoding
 # former regex: "_csrf_token" value="([^"]+)"
 CSRF_TOKEN_REGEX = '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u0022'
@@ -28,6 +24,7 @@ CSRF_TOKEN_REGEX = '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u002
 MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
           'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 METER_RETRIEVAL_MAX_DAYS_BACK = 3
+METER_NO_VALUE = 0
 
 
 class AsyncClient():
@@ -35,13 +32,13 @@ class AsyncClient():
     Retrieve subscriber and meter information from Suez on toutsurmoneau.fr
     """
 
-    def __init__(self, username: str, password: str, session: aiohttp.ClientSession, meter_id: Optional[str] = None, provider: Optional[str] = None, use_litre: bool = True) -> None:
+    def __init__(self, username: str, password: str, meter_id: Optional[str] = None, url: Optional[str] = None, session: Optional[aiohttp.ClientSession] = None, use_litre: bool = True) -> None:
         """
         Initialize the client object.
         @param username account id
         @param password account password
         @param meter_id water meter ID (optional)
-        @param provider name of provider from PROVIDER_URLS (e.g. 'Suez'), or base URL of provider: 'https://www.toutsurmoneau.fr/mon-compte-en-ligne'
+        @param url URL of provider, e.g. one of KNOWN_PROVIDER_URLS or other URL of provider.
         @param session an HTTP session
         @param use_litre use Litre a unit if True, else use api native unit (cubic meter)
         If meter_id is None, it will be read from the web.
@@ -50,17 +47,13 @@ class AsyncClient():
         self._username = username
         self._password = password
         self._id = meter_id
-        self._session = session
-        self._cookies = None
+        self._client_session = session
         self._use_litre = use_litre
-        # Default value
-        if provider is None:
-            provider = 'Suez'
-        # If name in table, use URL, or the provider is the URL
-        if provider in PROVIDER_URLS:
-            self._base_url = f"{PROVIDER_URLS[provider]}/{MAIN_URL_PATH}"
+        # Default value: first known provider (Suez)
+        if url is None:
+            self._base_url = KNOWN_PROVIDER_URLS[0]
         else:
-            self._base_url = provider
+            self._base_url = url
 
     def _full_url(self, endpoint: str) -> str:
         """Just concatenate the sub path with base URL"""
@@ -78,39 +71,44 @@ class AsyncClient():
     def _is_valid_absolute(self, value) -> bool:
         """
         @param value the absolute volume value on meter
-        @return True if zero: invalid value
+        @return True if not zero: valid value
         """
-        return int(value) != 0
+        return int(value) != METER_NO_VALUE
+
+    def _request(self, path: str, data=None, **kwargs: Any) -> aiohttp.ClientSession:
+        if self._client_session is None:
+            self._client_session = aiohttp.ClientSession()
+        method = 'post'
+        if data is None:
+            method = 'get'
+        return self._client_session.request(method=method, url=self._full_url(path), data=data, **kwargs)
 
     async def _async_find_in_page(self, page: str, reg_ex: str) -> str:
         """
         Extract the regex from the specified page.
         If _cookies is None, then it sets it, else it remains unchanged.
         """
-        async with self._session.get(self._full_url(page), cookies=self._cookies) as response:
+        async with self._request(path=page) as response:
             page_content = await response.text(encoding='utf-8')
             # get meter id from page
             matches = re.compile(reg_ex).search(page_content)
             if matches is None:
                 raise ClientError(f"Could not find {reg_ex} in {page}")
             result = matches.group(1)
-            # when not authenticated, cookies are used for authentication
-            if self._cookies is None:
-                self._cookies = response.cookies
             return result
 
     async def _async_ensure_logged_in(self) -> None:
         """
-        Generate authentication cookie if self._cookies is None.
+        Authenticate if not yet done.
         """
-        if self._cookies is not None:
-            return
-        # go to login page, retrieve token and login cookies
+        if self._client_session is not None:
+            the_cookies = self._client_session.cookie_jar.filter_cookies(
+                self._base_url)
+            if AUTHENTICATION_COOKIE in the_cookies:
+                return
+        # go to login page, retrieve CSRF token and login cookies (because cookie is None)
         csrf_token = await self._async_find_in_page(
             PAGE_LOGIN, CSRF_TOKEN_REGEX)
-        login_cookies = self._cookies
-        # reset cookies , as it is not yet the auth cookies
-        self._cookies = None
         data = {
             '_csrf_token': csrf_token.encode('utf-8').decode('unicode-escape'),
             '_username': self._username,
@@ -120,19 +118,17 @@ class AsyncClient():
             'tsme_user_login[_username]': self._username,
             'tsme_user_login[_password]': self._password
         }
-        # get session cookie used to be authenticated
-        async with self._session.post(self._full_url(PAGE_LOGIN), cookies=login_cookies, data=data, allow_redirects=False) as response:
-            the_cookies = self._session.cookie_jar.filter_cookies(
+        # get session cookie used to be authenticated, cookies=login_cookies
+        async with self._request(path=PAGE_LOGIN, data=data, allow_redirects=False) as response:
+            the_cookies = self._client_session.cookie_jar.filter_cookies(
                 self._base_url)
-            if SESSION_ID not in the_cookies:
+            if AUTHENTICATION_COOKIE not in the_cookies:
                 raise ClientError(
-                    f'Login error: no {SESSION_ID} found in cookies for {PAGE_LOGIN}.')
+                    f'Login error: no {AUTHENTICATION_COOKIE} found in cookies for {PAGE_LOGIN}.')
             page_content = await response.text(encoding='utf-8')
             if PAGE_DASHBOARD not in page_content:
                 raise ClientError(
                     f'Login error: no {PAGE_DASHBOARD} found in {PAGE_LOGIN}.')
-            # build cookie used when authenticated
-            self._cookies = {SESSION_ID: the_cookies[SESSION_ID]}
 
     async def _async_call_api(self, endpoint) -> dict:
         """Call the specified API
@@ -144,13 +140,14 @@ class AsyncClient():
         retried = False
         while True:
             await self._async_ensure_logged_in()
-            async with self._session.get(self._full_url(endpoint), cookies=self._cookies) as response:
+            async with self._request(path=endpoint) as response:
                 if 'application/json' not in response.headers.get('content-type'):
                     if retried:
                         raise ClientError('Failed refreshing cookie')
                     retried = True
                     # reset cookie to regenerate
-                    self._cookies = None
+                    self._client_session.cookie_jar.clear_domain(
+                        urlparse(self._base_url).netloc)
                     # try again
                     continue
                 result = await response.json()

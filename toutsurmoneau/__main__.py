@@ -17,8 +17,8 @@ def command_line():
                         required=True, help='Password')
     parser.add_argument('-c', '--meter_id',
                         required=False, help='Water Meter Id')
-    parser.add_argument('-P', '--provider',
-                        required=False, help='Provider name or URL')
+    parser.add_argument('-U', '--url',
+                        required=False, help='full URL of provider, including mon-compte-en-ligne')
     parser.add_argument('-e', '--execute',
                         required=False, default='check_credentials', help='Command to execute (attributes,contracts,meter_id,latest_meter_reading,monthly_recent,daily_for_month,check_credentials)')
     parser.add_argument('-d', '--data',
@@ -39,8 +39,9 @@ def command_line():
 
 
 def legacy_execute(args):
-    client = toutsurmoneau.Client(args.username, args.password,
-                                  args.meter_id, args.provider)
+    client = toutsurmoneau.Client(
+        username=args.username, password=args.password,
+        meter_id=args.meter_id, provider=args.url)
     try:
         if args.execute == 'check_credentials':
             data = client.check_credentials()
@@ -70,7 +71,7 @@ async def async_execute(args):
         trace_config.on_request_start.append(on_request_start)
     async with aiohttp.ClientSession(trace_configs=[trace_config]) as session:
         client = toutsurmoneau.AsyncClient(username=args.username, password=args.password,
-                                           meter_id=args.meter_id, provider=args.provider, session=session)
+                                           meter_id=args.meter_id, url=args.url, session=session)
         if args.execute == 'check_credentials':
             data = await client.async_check_credentials()
         elif args.execute == 'contracts':
