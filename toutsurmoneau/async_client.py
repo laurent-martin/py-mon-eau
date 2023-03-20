@@ -34,14 +34,15 @@ class AsyncClient():
 
     def __init__(self, username: str, password: str, meter_id: Optional[str] = None, url: Optional[str] = None, session: Optional[aiohttp.ClientSession] = None, use_litre: bool = True) -> None:
         """
-        Initialize the client object.
+        Initialize the client object but no network connection is made.
+
         @param username account id
         @param password account password
         @param meter_id water meter ID (optional)
         @param url URL of provider, e.g. one of KNOWN_PROVIDER_URLS or other URL of provider.
         @param session an HTTP session
         @param use_litre use Litre a unit if True, else use api native unit (cubic meter)
-        If meter_id is None, it will be read from the web.
+        If meter_id is None, it will be read from the web later.
         """
         # store useful parameters
         self._username = username
@@ -75,7 +76,11 @@ class AsyncClient():
         """
         return int(value) != METER_NO_VALUE
 
-    def _request(self, path: str, data=None, **kwargs: Any) -> aiohttp.ClientSession:
+    def _request(self, path: str, data=None, **kwargs: Any):
+        """Create a request context manager depending on presence of data: get or post
+
+        If no session exists, create one
+        """
         if self._client_session is None:
             self._client_session = aiohttp.ClientSession()
         method = 'post'
@@ -86,7 +91,6 @@ class AsyncClient():
     async def _async_find_in_page(self, page: str, reg_ex: str) -> str:
         """
         Extract the regex from the specified page.
-        If _cookies is None, then it sets it, else it remains unchanged.
         """
         async with self._request(path=page) as response:
             page_content = await response.text(encoding='utf-8')
@@ -124,16 +128,15 @@ class AsyncClient():
                 self._base_url)
             if AUTHENTICATION_COOKIE not in the_cookies:
                 raise ClientError(
-                    f'Login error: no {AUTHENTICATION_COOKIE} found in cookies for {PAGE_LOGIN}.')
+                    f'Login error: {self._base_url}: no {AUTHENTICATION_COOKIE} found in cookies for {PAGE_LOGIN}.')
             page_content = await response.text(encoding='utf-8')
             if PAGE_DASHBOARD not in page_content:
                 raise ClientError(
-                    f'Login error: no {PAGE_DASHBOARD} found in {PAGE_LOGIN}.')
+                    f'Login error: {self._base_url}: no {PAGE_DASHBOARD} found in {PAGE_LOGIN}.')
 
     async def _async_call_api(self, endpoint) -> dict:
-        """Call the specified API
+        """Call the specified API ensuring authentication.
 
-        Regenerate cookie if necessary
         @return the dict of result
         """
         _LOGGER.debug("Calling: %s", endpoint)
@@ -152,7 +155,7 @@ class AsyncClient():
                     continue
                 result = await response.json()
             if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
-                raise ClientError(result[1])
+                raise ClientError(f'API returned error: {result[1]}')
             _LOGGER.debug("Result: %s", result)
             return result
 
@@ -189,7 +192,8 @@ class AsyncClient():
         @return [dict] [day_in_month]={day:, total:} daily usage for the specified month
         """
         if not isinstance(report_date, datetime.date):
-            raise ClientError('Argument: Provide a date object')
+            raise ClientError(
+                'Coding error: Provide a date object for report_date')
         try:
             daily = await self._async_call_api(
                 f"{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{await self.async_meter_id()}")

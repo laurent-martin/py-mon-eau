@@ -36,7 +36,8 @@ class Client():
 
     async def _async_task(self, check_only: bool = False):
         async with aiohttp.ClientSession() as session:
-            self._async_client._session = session
+            # using this session will autoclose
+            self._async_client._client_session = session
             if check_only:
                 return await self._async_client.async_check_credentials()
             today = datetime.date.today()
@@ -57,13 +58,13 @@ class Client():
         """
         @return True if credentials are valid
         """
-        return asyncio.run(self._async_task(True))
+        return asyncio.run(main=self._async_task(True))
 
     def update(self) -> dict:
         """
         @return a summary of collected data.
         """
-        asyncio.run(self._async_task())
+        asyncio.run(main=self._async_task())
         return self.attributes
 
     def close_session(self) -> None:
