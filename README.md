@@ -1,6 +1,6 @@
 # py-mon-eau
 
-Version 0.0.17
+Version 0.0.18
 
 Get your water meter data from your online Suez account (<www.toutsurmoneau.fr>) as well as other sites using the same interface.
 

@@ -1,7 +1,7 @@
 # see https://peps.python.org/pep-0621/
 [project]
 name = "toutsurmoneau"
-version = "0.0.17"
+version = "0.0.18"
 description = "Retrieve water meter information from Suez web site https://www.toutsurmoneau.fr/ and other water providers in france."
 readme = "README.md"
 requires-python = ">=3.7"
@@ -25,7 +25,7 @@ dependencies = ['aiohttp', 'asyncio', 'pyyaml', 'datetime']
 toutsurmoneau = "toutsurmoneau.__main__:command_line"
 
 [tool.bumpver]
-current_version = "0.0.17"
+current_version = "0.0.18"
 version_pattern = "MAJOR.MINOR.PATCH[PYTAGNUM]"
 commit_message = "bump version {old_version} -> {new_version}"
 commit = true
