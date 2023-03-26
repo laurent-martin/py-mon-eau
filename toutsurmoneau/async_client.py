@@ -106,6 +106,8 @@ class AsyncClient():
     async def _async_ensure_logged_in(self) -> None:
         """
         Authenticate if not yet done.
+
+        Raise exception if login fails.
         """
         # Check is there is already an authentication cookie
         if self._client_session is not None:
@@ -280,7 +282,7 @@ class AsyncClient():
         @return True if credentials are valid
         """
         try:
-            await self.async_contracts()
+            await self._async_ensure_logged_in()
         except Exception as error:
             _LOGGER.debug("Login failed: %s", error)
             return False
