@@ -107,7 +107,7 @@ class AsyncClient():
         """
         Authenticate if not yet done.
 
-        Raise exception if login fails.
+        Raise ClientError if login fails.
         """
         # Check is there is already an authentication cookie
         if self._client_session is not None:
@@ -196,24 +196,17 @@ class AsyncClient():
                     del contract[key]
         return contract_list
 
-    async def async_daily_for_month(self, report_date: datetime.date, throw: bool = False) -> dict:
+    async def async_daily_for_month(self, report_date: datetime.date) -> dict:
         """
         @param report_date [datetime.date] specify year/month for report, e.g. built with Date.new(year,month,1)
-        @param throw set to True to get an exception if there is no data for that date
         @return [dict] [day_in_month]={day:, total:} daily usage for the specified month
+        raise an exception if there is no data for that date
         """
         if not isinstance(report_date, datetime.date):
             raise ClientError(
                 'Coding error: Provide a date object for report_date')
-        try:
-            daily = await self._async_call_api(
-                f"{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{await self.async_meter_id()}")
-        except Exception as e:
-            if throw:
-                raise e
-            else:
-                _LOGGER.debug("Error: %s", e)
-            daily = []
+        daily = await self._async_call_api(
+            f"{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{await self.async_meter_id()}")
         # since the month is known, keep only day in result (avoid redundant information)
         result = {
             'daily': {},
@@ -267,10 +260,13 @@ class AsyncClient():
         for _ in range(METER_RETRIEVAL_MAX_DAYS_BACK):
             test_day = reading_date.day
             _LOGGER.debug("Trying day: %d", test_day)
-            if month_data is None:
-                month_data = await self.async_daily_for_month(reading_date)
-            if test_day in month_data[what]:
-                return {'date': reading_date, 'volume': month_data[what][test_day]}
+            try:
+                if month_data is None:
+                    month_data = await self.async_daily_for_month(reading_date)
+                if test_day in month_data[what]:
+                    return {'date': reading_date, 'volume': month_data[what][test_day]}
+            except Exception as error:
+                _LOGGER.debug("Error getting month data: %s", error)
             reading_date = reading_date - datetime.timedelta(days=1)
             if reading_date.day > test_day:
                 month_data = None
