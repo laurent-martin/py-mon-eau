@@ -78,6 +78,12 @@ class AsyncClient():
         """
         return int(value) != METER_NO_VALUE
 
+    def ensure_logout(self) -> None:
+        """Clear login cookie to force logout and login next time"""
+        if self._client_session is not None:
+            self._client_session.cookie_jar.clear_domain(
+                urlparse(self._base_url).netloc)
+
     def _request(self, path: str, data=None, **kwargs: Any):
         """Create a request context manager depending on presence of data: get or post
 
@@ -138,6 +144,8 @@ class AsyncClient():
             _LOGGER.debug("Redirect: %s", response.headers['Location'])
             # login failed if we are redirected to the login page
             if PAGE_LOGIN in response.headers['Location']:
+                # reset cookie to trigger login next time
+                self.ensure_logout()
                 raise ClientError(
                     f'Login error: {self._base_url}: redirecting to {PAGE_LOGIN}.')
             # page_content = await response.text(encoding='utf-8')
@@ -160,8 +168,7 @@ class AsyncClient():
                         raise ClientError('Failed refreshing cookie')
                     retried = True
                     # reset cookie to regenerate
-                    self._client_session.cookie_jar.clear_domain(
-                        urlparse(self._base_url).netloc)
+                    self.ensure_logout()
                     # try again
                     continue
                 result = await response.json()
