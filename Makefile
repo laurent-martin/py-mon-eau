@@ -1,6 +1,8 @@
 all::
 bumpver:
 	bumpver update --patch
+release:
+	gh release create
 build: clean
 	python3 -m pip install --upgrade build
 	python3 -m build .
@@ -8,8 +10,6 @@ publish: build
 	pip install twine
 	twine check dist/*
 	twine upload --non-interactive dist/*
-release:
-	gh release create
 install: clean build
 	python3 -m pip install -e .
 #pip install --force-reinstall dist/toutsurmoneau-0.0.1-py3-none-any.whl
