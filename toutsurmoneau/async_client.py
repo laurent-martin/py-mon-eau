@@ -50,9 +50,11 @@ class AsyncClient():
         self._id = meter_id
         self._client_session = session
         self._use_litre = use_litre
-        # Default value: first known provider (Suez)
+        # base url contains the scheme, address and base path
         if url is None:
+            # Default value: first known provider (Suez)
             self._base_url = KNOWN_PROVIDER_URLS[0]
+            _LOGGER.debug("Defaulting url to %s", self._base_url)
         else:
             self._base_url = url
 
@@ -105,15 +107,16 @@ class AsyncClient():
         """
         Authenticate if not yet done.
         """
+        # Check is there is already an authentication cookie
         if self._client_session is not None:
             the_cookies = self._client_session.cookie_jar.filter_cookies(
                 self._base_url)
             if AUTHENTICATION_COOKIE in the_cookies:
                 return
-        # go to login page, retrieve CSRF token and login cookies (because cookie is None)
+        # step 1: GET login page, retrieve CSRF token and login cookies (because cookie is None)
         csrf_token = await self._async_find_in_page(
             PAGE_LOGIN, CSRF_TOKEN_REGEX)
-        data = {
+        credential_data = {
             '_csrf_token': csrf_token.encode('utf-8').decode('unicode-escape'),
             '_username': self._username,
             '_password': self._password,
@@ -122,17 +125,23 @@ class AsyncClient():
             'tsme_user_login[_username]': self._username,
             'tsme_user_login[_password]': self._password
         }
-        # get session cookie used to be authenticated, cookies=login_cookies
-        async with self._request(path=PAGE_LOGIN, data=data, allow_redirects=False) as response:
+        # step 2: POST credentials in login page and check session cookie used to be authenticated (keep cookies from previous step)
+        async with self._request(path=PAGE_LOGIN, data=credential_data, allow_redirects=False) as response:
+            _LOGGER.debug("Response: %s", response)
             the_cookies = self._client_session.cookie_jar.filter_cookies(
                 self._base_url)
             if AUTHENTICATION_COOKIE not in the_cookies:
                 raise ClientError(
                     f'Login error: {self._base_url}: no {AUTHENTICATION_COOKIE} found in cookies for {PAGE_LOGIN}.')
-            page_content = await response.text(encoding='utf-8')
-            if PAGE_DASHBOARD not in page_content:
+            _LOGGER.debug("Redirect: %s", response.headers['Location'])
+            # login failed if we are redirected to the login page
+            if PAGE_LOGIN in response.headers['Location']:
                 raise ClientError(
-                    f'Login error: {self._base_url}: no {PAGE_DASHBOARD} found in {PAGE_LOGIN}.')
+                    f'Login error: {self._base_url}: redirecting to {PAGE_LOGIN}.')
+            # page_content = await response.text(encoding='utf-8')
+            # if PAGE_DASHBOARD not in page_content:
+            #    raise ClientError(
+            #        f'Login error: {self._base_url}: no {PAGE_DASHBOARD} found in {PAGE_LOGIN}.')
 
     async def _async_call_api(self, endpoint) -> dict:
         """Call the specified API ensuring authentication.
