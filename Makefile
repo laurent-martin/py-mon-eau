@@ -1,4 +1,6 @@
 all::
+bumpver:
+	bumpver update --patch
 build: clean
 	python3 -m pip install --upgrade build
 	python3 -m build .
@@ -34,5 +36,3 @@ clean:
 	rm -fr dist
 	find . -name '*.egg-info' -print0|xargs -0 rm -fr
 	find . -name __pycache__ -print0|xargs -0 rm -fr
-bumpver:
-	bumpver update --patch
