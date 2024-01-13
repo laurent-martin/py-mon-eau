@@ -1,6 +1,23 @@
-# Known providers, give the base url, other can be supported
+# Known providers, give the base url, other can be added
 KNOWN_PROVIDER_URLS = [
-    'https://www.toutsurmoneau.fr/mon-compte-en-ligne',
-    'https://www.eau-olivet.fr/mon-compte-en-ligne',
-    'https://eaudubaslanguedoc.toutsurmoneau.fr/mon-compte-en-ligne'
+    "https://www.toutsurmoneau.fr/mon-compte-en-ligne",
+    "https://assainissement.eaudetoulousemetropole.fr/mon-compte-en-ligne",
+    "https://colmarienne.toutsurmoneau.fr/mon-compte-en-ligne",
+    "https://eaudubaslanguedoc.toutsurmoneau.fr/mon-compte-en-ligne",
+    "https://leauduvalenciennois.toutsurmoneau.fr/mon-compte-en-ligne",
+    "https://sidesol.toutsurmoneau.fr/mon-compte-en-ligne",
+    "https://www.dolea.fr/mon-compte-en-ligne",
+    "https://www.eau-olivet.fr/mon-compte-en-ligne",
+    "https://www.eaugrandavignon.fr/mon-compte-en-ligne",
+    "https://www.eaux-de-calais.com/mon-compte-en-ligne",
+    "https://www.eaux-dunkerque.fr/mon-compte-en-ligne",
+    "https://www.eauxdelest.com/mon-compte-en-ligne",
+    "https://www.gaz-et-eaux.info/mon-compte-en-ligne",
+    "https://www.odivea.fr/mon-compte-en-ligne",
+    "https://www.orleanaise-des-eaux.fr/mon-compte-en-ligne",
+    "https://www.seop.fr/mon-compte-en-ligne",
+    "https://www.sevesc.fr/mon-compte-en-ligne",
+    "https://www.seynoisedeseaux.fr/mon-compte-en-ligne",
+    "https://www.usagers.eaux-de-normandie.fr/mon-compte-en-ligne",
+    "https://www.usagers.leau.bordeaux-metropole.fr/mon-compte-en-ligne",
 ]
