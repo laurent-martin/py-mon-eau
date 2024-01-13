@@ -15,13 +15,15 @@ install: clean build
 #pip install --force-reinstall dist/toutsurmoneau-0.0.1-py3-none-any.whl
 fulltest: install test
 testlegacy:
-	set -e;. private/env.sh;\
+	set -ex;\
+	. private/env.sh;\
 	for test_id in attributes check_credentials;do \
 		echo "== $${test_id} (--legacy) =========================================================";\
 		$$toutsurmoneau --legacy -u $$U -p $$P -e $$test_id $$compat;\
 	done
 testasync:
-	set -e;. private/env.sh;\
+	set -ex;\
+	. private/env.sh;\
 	for test_id in meter_id contracts latest_meter_reading monthly_recent daily_for_month check_credentials;do \
 		echo "== $${test_id} =========================================================";\
 		$$toutsurmoneau -u $$U -p $$P -e $$test_id $$compat;\
