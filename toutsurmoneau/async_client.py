@@ -8,6 +8,7 @@ from .errors import ClientError
 from .const import KNOWN_PROVIDER_URLS
 
 _LOGGER = logging.getLogger(__name__)
+PUBLIC_BASE_URL = 'https://www.toutsurmoneau.fr/public-api/user'
 PAGE_LOGIN = 'je-me-connecte'
 PAGE_DASHBOARD = 'tableau-de-bord'
 PAGE_CONSUMPTION = 'historique-de-consommation-tr'
@@ -59,7 +60,9 @@ class AsyncClient():
             self._base_url = url
 
     def _full_url(self, endpoint: str) -> str:
-        """Just concatenate the sub path with base URL"""
+        """@return full path by concatenating base URL and sub path"""
+        if endpoint == API_ENDPOINT_CONTRACT:
+            return f"{PUBLIC_BASE_URL}/{endpoint}"
         return f"{self._base_url}/{endpoint}"
 
     def _convert_volume(self, volume: float) -> Union[float, int]:
@@ -94,6 +97,7 @@ class AsyncClient():
         method = 'post'
         if data is None:
             method = 'get'
+        _LOGGER.debug("Accessing: %s %s", method, self._full_url(path))
         return self._client_session.request(method=method, url=self._full_url(path), data=data, **kwargs)
 
     async def _async_find_in_page(self, page: str, reg_ex: str) -> str:
@@ -120,10 +124,12 @@ class AsyncClient():
             the_cookies = self._client_session.cookie_jar.filter_cookies(
                 self._base_url)
             if AUTHENTICATION_COOKIE in the_cookies:
+                _LOGGER.debug("Already logged-in")
                 return
         # step 1: GET login page, retrieve CSRF token and login cookies (because cookie is None)
         csrf_token = await self._async_find_in_page(
             PAGE_LOGIN, CSRF_TOKEN_REGEX)
+        # _LOGGER.debug("CSRF token: %s", csrf_token)
         credential_data = {
             '_csrf_token': csrf_token.encode('utf-8').decode('unicode-escape'),
             '_username': self._username,
@@ -135,7 +141,7 @@ class AsyncClient():
         }
         # step 2: POST credentials in login page and check session cookie used to be authenticated (keep cookies from previous step)
         async with self._request(path=PAGE_LOGIN, data=credential_data, allow_redirects=False) as response:
-            _LOGGER.debug("Response: %s", response)
+            # _LOGGER.debug("Response: %s", response)
             the_cookies = self._client_session.cookie_jar.filter_cookies(
                 self._base_url)
             if AUTHENTICATION_COOKIE not in the_cookies:
@@ -148,6 +154,7 @@ class AsyncClient():
                 self.ensure_logout()
                 raise ClientError(
                     f'Login error: {self._base_url}: redirecting to {PAGE_LOGIN}.')
+            _LOGGER.debug("Login successful")
             # page_content = await response.text(encoding='utf-8')
             # if PAGE_DASHBOARD not in page_content:
             #    raise ClientError(
@@ -165,6 +172,7 @@ class AsyncClient():
             async with self._request(path=endpoint) as response:
                 if 'application/json' not in response.headers.get('content-type'):
                     if retried:
+                        _LOGGER.debug("Response: %s", response)
                         raise ClientError('Failed refreshing cookie')
                     retried = True
                     # reset cookie to regenerate
