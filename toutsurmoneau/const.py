@@ -6,6 +6,7 @@ KNOWN_PROVIDER_URLS = [
     "https://eaudubaslanguedoc.toutsurmoneau.fr/mon-compte-en-ligne",
     "https://leauduvalenciennois.toutsurmoneau.fr/mon-compte-en-ligne",
     "https://sidesol.toutsurmoneau.fr/mon-compte-en-ligne",
+    "https://so-eau.toutsurmoneau.fr/mon-compte-en-ligne",
     "https://www.dolea.fr/mon-compte-en-ligne",
     "https://www.eau-olivet.fr/mon-compte-en-ligne",
     "https://www.eaugrandavignon.fr/mon-compte-en-ligne",
