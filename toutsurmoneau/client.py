@@ -41,7 +41,7 @@ class Client():
             if check_only:
                 return await self._async_client.async_check_credentials()
             today = datetime.date.today()
-            self.attributes['attribution'] = f"Data provided by {self._async_client._base_url}"
+            self.attributes['attribution'] = f"Data provided by {self._async_client.provider_name()}"
             summary = await self._async_client.async_monthly_recent()
             self.attributes['lastYearOverAll'] = summary['last_year_volume']
             self.attributes['thisYearOverAll'] = summary['this_year_volume']
