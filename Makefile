@@ -1,4 +1,7 @@
 all::
+penv:
+	python3 -m venv .venv
+	@echo "source .venv/bin/activate"
 bumpver:
 	bumpver update --patch
 release:
