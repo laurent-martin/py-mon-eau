@@ -9,7 +9,7 @@ import aiohttp
 
 
 def command_line():
-    """Main function"""
+    """Main function for command line"""
     parser = argparse.ArgumentParser()
     parser.add_argument('-u', '--username', required=True,
                         help='Suez username')
@@ -39,6 +39,7 @@ def command_line():
 
 
 def legacy_execute(args):
+    """Execute the command in legacy mode (sync)."""
     client = toutsurmoneau.Client(
         username=args.username, password=args.password,
         meter_id=args.meter_id, provider=args.url)
@@ -67,6 +68,7 @@ async def on_request_start(session, context, params):
 
 
 async def async_execute(args):
+    """Execute the CLI command in async mode."""
     trace_config = aiohttp.TraceConfig()
     if args.debug:
         trace_config.on_request_start.append(on_request_start)

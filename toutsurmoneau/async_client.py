@@ -17,7 +17,9 @@ PAGE_CONSUMPTION = 'historique-de-consommation-tr'
 API_ENDPOINT_DAILY = 'statJData'
 # monthly (Mois) : /meter_id : Array(mmm. yy, monthly volume, cumulative volume, Mmmmm YYYY)
 API_ENDPOINT_MONTHLY = 'statMData'
+# list contracts associated with account
 API_ENDPOINT_CONTRACT = 'donnees-contrats'
+# The authentication cookie
 AUTHENTICATION_COOKIE = 'eZSESSID'
 # regex is before utf8 encoding
 # former regex: "_csrf_token" value="([^"]+)"
@@ -25,7 +27,9 @@ CSRF_TOKEN_REGEX = '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u002
 # Map french months to its index
 MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
           'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+# for "last reading" retrieval
 METER_RETRIEVAL_MAX_DAYS_BACK = 3
+# no reading for meter (total is zero means no value available for meter reading)
 METER_NO_VALUE = 0
 
 
@@ -71,7 +75,7 @@ class AsyncClient():
         if endpoint == API_ENDPOINT_CONTRACT:
             return f"{PUBLIC_BASE_URL}/{endpoint}"
         add_suffix = ""
-        if not self._provider_url.endswith(MAIN_PATH):
+        if not self._api_base_url.endswith(MAIN_PATH):
             add_suffix = f"/{MAIN_PATH}"
         return f"{self._api_base_url}{add_suffix}/{endpoint}"
 
@@ -127,7 +131,7 @@ class AsyncClient():
         async with self._request(path=page) as response:
             self.validate_response(response)
             page_content = await response.text(encoding='utf-8')
-            # get meter id from page
+            # get expected regex from page
             matches = re.compile(reg_ex).search(page_content)
             if matches is None:
                 raise ClientError(f"Could not find {reg_ex} in {page}")
@@ -143,10 +147,12 @@ class AsyncClient():
         # Check is there is already an authentication cookie
         if self._client_session is not None:
             the_cookies = self._client_session.cookie_jar.filter_cookies(
-                self._provider_url)
+                self._api_base_url)
+            _LOGGER.debug("Checking cookie")
             if AUTHENTICATION_COOKIE in the_cookies:
                 _LOGGER.debug("Already logged-in")
                 return
+            _LOGGER.debug("Cookie not found")
         # step 1: GET login page, retrieve CSRF token and login cookies (because cookie is None)
         csrf_token = await self._async_find_in_page(
             PAGE_LOGIN, CSRF_TOKEN_REGEX)

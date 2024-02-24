@@ -6,8 +6,8 @@ Get your water meter data from your online Suez account (<www.toutsurmoneau.fr>)
 
 Two Classes are provided:
 
-- `Client` is a legacy synchronous client, compatible with module `pySuez`
 - `AsyncClient` is an asynchronous client
+- `Client` is a legacy synchronous client, compatible with module `pySuez`
 
 ## Installation
 
@@ -54,4 +54,4 @@ The sync object returns the same values as `pySuez`.
 
 ## History
 
-This module is inspired from [pySuez from Ooii](https://github.com/ooii/pySuez) itself inspired by [domoticz sensor](https://github.com/Sirus10/domoticz) and [pyLinky](https://github.com/pirionfr/pyLinky).
+This module was inspired from [pySuez from Ooii](https://github.com/ooii/pySuez).
