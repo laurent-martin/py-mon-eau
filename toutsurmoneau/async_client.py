@@ -9,7 +9,9 @@ from .const import KNOWN_PROVIDER_URLS
 
 _LOGGER = logging.getLogger(__name__)
 PUBLIC_BASE_URL = 'https://www.toutsurmoneau.fr/public-api/user'
+# web site main path
 MAIN_PATH = 'mon-compte-en-ligne'
+# pages
 PAGE_LOGIN = 'je-me-connecte'
 PAGE_DASHBOARD = 'tableau-de-bord'
 PAGE_CONSUMPTION = 'historique-de-consommation-tr'
@@ -28,7 +30,7 @@ CSRF_TOKEN_REGEX = '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u002
 MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
           'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 # for "last reading" retrieval
-METER_RETRIEVAL_MAX_DAYS_BACK = 3
+METER_RETRIEVAL_MAX_DAYS_BACK = 5
 # no reading for meter (total is zero means no value available for meter reading)
 METER_NO_VALUE = 0
 
