@@ -64,7 +64,8 @@ _LOGGER = logging.getLogger('aiohttp.client')
 
 async def on_request_start(session, context, params):
     """Debug http"""
-    _LOGGER.debug(f'Request: <%s>', params)
+    _LOGGER.debug(f'Request: %s %s', params, '\n'.join(
+        [f'{key}: {value}' for key, value in params.headers.items()]))
 
 
 async def async_execute(args):
