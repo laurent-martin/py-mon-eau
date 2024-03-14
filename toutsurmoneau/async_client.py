@@ -3,7 +3,7 @@ import datetime
 import logging
 import re
 from typing import Optional, Union, Any
-# from urllib.parse import urlparse
+from urllib.parse import urlparse
 from .errors import ClientError
 from .const import KNOWN_PROVIDER_URLS
 
@@ -102,6 +102,12 @@ class AsyncClient():
         @return True if not zero: valid value
         """
         return int(value) != METER_NO_VALUE
+
+    def ensure_logout(self) -> None:
+        """Clear login cookie to force logout and login next time"""
+        if self._client_session is not None:
+            self._client_session.cookie_jar.clear_domain(
+                urlparse(self._api_base_url).netloc)
 
     def _dump_cookie_jar(self, jar) -> None:
         _LOGGER.debug("Cookie jar:")
