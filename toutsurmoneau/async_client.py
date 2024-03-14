@@ -1,17 +1,20 @@
+import aiohttp
 import datetime
 import logging
 import re
-import aiohttp
 from typing import Optional, Union, Any
-from urllib.parse import urlparse
+# from urllib.parse import urlparse
 from .errors import ClientError
 from .const import KNOWN_PROVIDER_URLS
 
 _LOGGER = logging.getLogger(__name__)
-PUBLIC_BASE_URL = 'https://www.toutsurmoneau.fr/public-api/user'
+# Generic URL of Suez web site
+GENERIC_BASE_URL = 'https://www.toutsurmoneau.fr'
+# public APIs are under this path
+PUBLIC_BASE_PATH = 'public-api/user'
 # web site main path
 MAIN_PATH = 'mon-compte-en-ligne'
-# pages
+# pages (return some HTML content, not JSON data)
 PAGE_LOGIN = 'je-me-connecte'
 PAGE_DASHBOARD = 'tableau-de-bord'
 PAGE_CONSUMPTION = 'historique-de-consommation-tr'
@@ -22,10 +25,12 @@ API_ENDPOINT_MONTHLY = 'statMData'
 # list contracts associated with account
 API_ENDPOINT_CONTRACT = 'donnees-contrats'
 # The authentication cookie
-AUTHENTICATION_COOKIE = 'eZSESSID'
-# regex is before utf8 encoding
+# AUTHENTICATION_COOKIE = 'eZSESSID'
+# regex for token in PAGE_LOGIN (before utf8 encoding)
 # former regex: "_csrf_token" value="([^"]+)"
 CSRF_TOKEN_REGEX = '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u0022'
+# regex for meter id in PAGE_CONSUMPTION
+METER_ID_REGEX = '/month/([0-9]+)'
 # Map french months to its index
 MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
           'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
@@ -60,30 +65,31 @@ class AsyncClient():
         self._use_litre = use_litre
         # base url contains the scheme, address and base path
         if url is None:
-            # Default value: first known provider (Suez)
-            self._provider_url = KNOWN_PROVIDER_URLS[0]
-            _LOGGER.debug("Defaulting url to %s", self._provider_url)
+            self._provider_url = GENERIC_BASE_URL
+            _LOGGER.debug("Defaulting URL to %s", self._provider_url)
         else:
             self._provider_url = url
-        self._api_base_url = KNOWN_PROVIDER_URLS[0]
         self._provider_name = self._provider_url
 
     def provider_name(self) -> str:
         """@return the name of the provider"""
         return self._provider_name
 
-    def _full_url(self, endpoint: str) -> str:
-        """@return full path by concatenating base URL and sub path"""
+    def _path_endpoint(self, endpoint: str) -> str:
+        """@return the full path for the specified endpoint"""
+        base_path = f"/{MAIN_PATH}"
         if endpoint == API_ENDPOINT_CONTRACT:
-            return f"{PUBLIC_BASE_URL}/{endpoint}"
-        add_suffix = ""
-        if not self._api_base_url.endswith(MAIN_PATH):
-            add_suffix = f"/{MAIN_PATH}"
-        return f"{self._api_base_url}{add_suffix}/{endpoint}"
+            base_path = f"/{PUBLIC_BASE_PATH}"
+        return f"{base_path}/{endpoint}"
+
+    def _full_url(self, endpoint: str) -> str:
+        """@return full URL by concatenating base URL and sub path"""
+        base_url = self._provider_url
+        return f"{base_url}{self._path_endpoint(endpoint)}"
 
     def _convert_volume(self, volume: float) -> Union[float, int]:
         """
-        @return volume converted to desired unit (m3 or litre)
+        @return volume converted from API (m3) to desired unit (m3 or litre)
         """
         if self._use_litre:
             return int(1000*volume)
@@ -97,155 +103,131 @@ class AsyncClient():
         """
         return int(value) != METER_NO_VALUE
 
-    def ensure_logout(self) -> None:
-        """Clear login cookie to force logout and login next time"""
-        if self._client_session is not None:
-            self._client_session.cookie_jar.clear_domain(
-                urlparse(self._api_base_url).netloc)
+    def _dump_cookie_jar(self, jar) -> None:
+        _LOGGER.debug("Cookie jar:")
+        for cookie in jar:
+            _LOGGER.debug(f"Domain: %s, Name: %s = %s", cookie['domain'],
+                          cookie.key, cookie.value)
 
-    def _request(self, path: str, data=None, **kwargs: Any):
+    def _request(self, path: str, data=None, **kwargs: Any) -> aiohttp.ClientResponse:
         """Create a request context manager depending on presence of data: get or post
 
         If no session exists, create one
         """
         if self._client_session is None:
-            self._client_session = aiohttp.ClientSession(raise_for_status=True)
-        method = 'post'
-        if data is None:
-            method = 'get'
-        _LOGGER.debug("Accessing: %s %s", method, self._full_url(path))
-        return self._client_session.request(method=method, url=self._full_url(path), data=data, **kwargs)
+            self._client_session = aiohttp.ClientSession()
+        self._dump_cookie_jar(self._client_session.cookie_jar)
+        _LOGGER.debug("=====================================================")
+        full_url = self._full_url(path)
+        method = 'get'
+        if data is not None:
+            method = 'post'
+            _LOGGER.debug("Data: %s", data)
+        _LOGGER.debug("Accessing: %s %s", method, full_url)
+        return self._client_session.request(
+            method=method,
+            url=full_url,
+            data=data,
+            **kwargs)
 
-    def validate_response(self, response: aiohttp.ClientResponse, success_code=200) -> None:
+    def _validate_response(self, response: aiohttp.ClientResponse, success_code=200) -> None:
         """
         Validate the response, raise an exception if not successful.
         """
+        _LOGGER.debug("Request Cookie: %s",
+                      response.request_info.headers.get("Cookie"))
         _LOGGER.debug("Response: %s", response)
+        for cookie in response.cookies:
+            _LOGGER.debug("Response Cookie: %s", cookie)
         if response.status != success_code:
             response.raise_for_status()
             raise ClientError(
                 f'HTTP error {response.status} for {response.url}')
 
-    async def _async_find_in_page(self, page: str, reg_ex: str) -> str:
-        """
-        Extract the regex from the specified page.
-        """
-        async with self._request(path=page) as response:
-            self.validate_response(response)
-            page_content = await response.text(encoding='utf-8')
-            # get expected regex from page
-            matches = re.compile(reg_ex).search(page_content)
-            if matches is None:
-                raise ClientError(f"Could not find {reg_ex} in {page}")
-            result = matches.group(1)
-            return result
+    def _find_in_text(self, text: str, reg_ex: str) -> str:
+        """Find the specified regex in the text and return the first group."""
+        # get expected regex from page
+        matches = re.compile(reg_ex).search(text)
+        if matches is None:
+            raise ClientError(f"Could not find {reg_ex} in page")
+        result = matches.group(1)
+        return result
 
-    async def _async_ensure_logged_in(self) -> None:
-        """
-        Authenticate if not yet done.
+    async def _async_call_with_auth(self, endpoint, decode: bool = True) -> Union[dict, str]:
+        """Call the specified endpoint ensuring authentication.
 
-        Raise ClientError if login fails.
-        """
-        # Check is there is already an authentication cookie
-        if self._client_session is not None:
-            the_cookies = self._client_session.cookie_jar.filter_cookies(
-                self._api_base_url)
-            _LOGGER.debug("Checking cookie")
-            if AUTHENTICATION_COOKIE in the_cookies:
-                _LOGGER.debug("Already logged-in")
-                return
-            _LOGGER.debug("Cookie not found")
-        # step 1: GET login page, retrieve CSRF token and login cookies (because cookie is None)
-        csrf_token = await self._async_find_in_page(
-            PAGE_LOGIN, CSRF_TOKEN_REGEX)
-        credential_data = {
-            '_csrf_token': csrf_token.encode('utf-8').decode('unicode-escape'),
-            '_username': self._username,
-            '_password': self._password,
-            'signin[username]': self._username,
-            'signin[password]': None,
-            'tsme_user_login[_username]': self._username,
-            'tsme_user_login[_password]': self._password
-        }
-        # step 2: POST credentials in login page and check session cookie used to be authenticated (keep cookies from previous step)
-        async with self._request(path=PAGE_LOGIN, data=credential_data, allow_redirects=False) as response:
-            self.validate_response(response, success_code=302)
-            the_cookies = self._client_session.cookie_jar.filter_cookies(
-                self._api_base_url)
-            if AUTHENTICATION_COOKIE not in the_cookies:
-                raise ClientError(
-                    f'Login error: {self._api_base_url}: no {AUTHENTICATION_COOKIE} found in cookies for {PAGE_LOGIN}.')
-            if 'Location' not in response.headers:
-                raise ClientError(
-                    f'Missing redirect in response for login.')
-            _LOGGER.debug("Redirect: %s", response.headers['Location'])
-            # login failed if we are redirected to the login page
-            if PAGE_LOGIN in response.headers['Location']:
-                # reset cookie to trigger login next time
-                self.ensure_logout()
-                raise ClientError(
-                    f'Login error: {self._api_base_url}: redirecting to {PAGE_LOGIN}.')
-            if MAIN_PATH not in response.headers['Location']:
-                raise ClientError(
-                    f'Login error: {self._api_base_url}: redirecting to {response.headers["Location"]}.')
-            # if response.headers['Location'].startswith('http'):
-            #    self._api_base_url = f"{response.headers['Location'].split(MAIN_PATH)[0]}{MAIN_PATH}"
-            _LOGGER.debug("Login successful")
-            # page_content = await response.text(encoding='utf-8')
-            # if PAGE_DASHBOARD not in page_content:
-            #    raise ClientError(
-            #        f'Login error: {self._api_base_url}: no {PAGE_DASHBOARD} found in {PAGE_LOGIN}.')
+        @param endpoint the endpoint to call
+        @param decode if True, decode the result as JSON
 
-    async def _async_call_api(self, endpoint) -> dict:
-        """Call the specified API ensuring authentication.
-
-        @return the dict of result
+        @return the dict of result, or page
         """
-        _LOGGER.debug("Calling: %s", endpoint)
-        retried = False
-        while True:
-            await self._async_ensure_logged_in()
+        _LOGGER.debug("Calling with auth: %s", endpoint)
+        # if first attempt fails, login, then try again
+        for attempt in range(1, 3):
             async with self._request(path=endpoint) as response:
-                self.validate_response(response)
-                if 'application/json' not in response.headers.get('content-type'):
-                    if retried:
-                        _LOGGER.debug("Response: %s", response)
-                        raise ClientError('Failed refreshing cookie')
-                    retried = True
-                    # reset cookie to regenerate
-                    self.ensure_logout()
-                    # try again
-                    continue
-                result = await response.json()
-            if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
-                raise ClientError(f'API returned error: {result[1]}')
-            _LOGGER.debug("Result: %s", result)
-            return result
+                self._validate_response(response)
+                # success !
+                if not response.url.path.endswith(PAGE_LOGIN):
+                    if not decode:
+                        return await response.text(encoding='utf-8')
+                    if 'application/json' not in response.headers.get('content-type'):
+                        raise ClientError(
+                            'Failed getting data: not JSON content')
+                    result = await response.json()
+                    if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
+                        raise ClientError(f'API returned error: {result[1]}')
+                    _LOGGER.debug("Result: %s", result)
+                    return result
+                # second attempt, after login failed
+                if attempt == 2:
+                    raise ClientError(f'Login failed.')
+                # first attempt failed, so try to login
+                _LOGGER.debug(f"Redirected to {
+                              PAGE_LOGIN}, performing login...")
+                # step 1: GET login page, retrieve CSRF token
+                csrf_token = None
+                async with self._request(path=PAGE_LOGIN) as response:
+                    text = await response.text(encoding='utf-8')
+                    csrf_token = self._find_in_text(text, CSRF_TOKEN_REGEX)
+                csrf_token = csrf_token.encode(
+                    'utf-8').decode('unicode-escape')
+                _LOGGER.debug("Token: %s", csrf_token)
+                # step 2: POST credentials in login page
+                credential_data = {
+                    '_csrf_token': csrf_token,
+                    'tsme_user_login[_username]': self._username,
+                    'tsme_user_login[_password]': self._password,
+                    'tsme_user_login[_target_path]': self._path_endpoint(PAGE_DASHBOARD),
+                }
+                # cookies are set in the session
+                async with self._request(path=PAGE_LOGIN, data=credential_data, allow_redirects=True) as response:
+                    self._validate_response(response)
 
     async def async_meter_id(self) -> str:
         """Water meter identifier
 
         @return subscriber's water meter identifier
-        If it was not provided in initialization, then it is read mon the web site.
+        If it was not provided in initialization, then it is read from the web site.
         """
         if self._id is None or "".__eq__(self._id):
-            await self._async_ensure_logged_in()
             # Read meter ID
-            self._id = await self._async_find_in_page(
-                PAGE_CONSUMPTION, '/month/([0-9]+)')
+            page = await self._async_call_with_auth(PAGE_CONSUMPTION, False)
+            self._id = self._find_in_text(page, METER_ID_REGEX)
         return self._id
 
-    async def async_contracts(self) -> dict:
+    async def async_contracts(self, active_only: Optional[bool] = True) -> dict:
         """List of contracts for the user.
 
         @return the list of contracts associated to the calling user.
         """
-        contract_list = await self._async_call_api(API_ENDPOINT_CONTRACT)
+        contract_list = await self._async_call_with_auth(API_ENDPOINT_CONTRACT)
         for contract in contract_list:
             # remove keys not used
             for key in ['website-link', 'searchData']:
                 if key in contract:
                     del contract[key]
+        if active_only:
+            contract_list = list(filter(lambda c: c['isActif'], contract_list))
         return contract_list
 
     async def async_daily_for_month(self, report_date: datetime.date) -> dict:
@@ -257,7 +239,7 @@ class AsyncClient():
         if not isinstance(report_date, datetime.date):
             raise ClientError(
                 'Coding error: Provide a date object for report_date')
-        daily = await self._async_call_api(
+        daily = await self._async_call_with_auth(
             f"{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{await self.async_meter_id()}")
         # since the month is known, keep only day in result (avoid redundant information)
         result = {
@@ -277,7 +259,7 @@ class AsyncClient():
         """
         @return [Hash] current month
         """
-        monthly = await self._async_call_api(
+        monthly = await self._async_call_with_auth(
             f"{API_ENDPOINT_MONTHLY}/{await self.async_meter_id()}")
         result = {
             'highest_monthly_volume': self._convert_volume(monthly.pop()),
@@ -330,8 +312,8 @@ class AsyncClient():
         @return True if credentials are valid
         """
         try:
-            await self._async_ensure_logged_in()
+            await self.async_contracts()
+            return True
         except Exception as error:
             _LOGGER.debug("Login failed: %s", error)
             return False
-        return True

@@ -2,6 +2,8 @@ all::
 penv:
 	python3 -m venv .venv
 	@echo "source .venv/bin/activate"
+inst:
+	pip3 install $$(sed -n -e 's/dependencies//p' pyproject.toml|tr -d "'[]=,")
 bumpver:
 	bumpver update --patch
 release:
@@ -22,18 +24,18 @@ testlegacy:
 	. private/env.sh;\
 	for test_id in attributes check_credentials;do \
 		echo "== $${test_id} (--legacy) =========================================================";\
-		$$toutsurmoneau --legacy -u $$U -p $$P -e $$test_id $$compat;\
+		$$toutsurmoneau --legacy -e $$test_id $$compat;\
 	done
 testasync:
 	set -ex;\
 	. private/env.sh;\
 	for test_id in meter_id contracts latest_meter_reading monthly_recent daily_for_month check_credentials;do \
 		echo "== $${test_id} =========================================================";\
-		$$toutsurmoneau -u $$U -p $$P -e $$test_id $$compat;\
+		$$toutsurmoneau -e $$test_id $$compat;\
 	done;\
 	. private/env.sh && \
 	two_month_earlier=$$(date -v1d -v-65d +%Y%m) && \
-	$$toutsurmoneau -u $$U -p $$P -e daily_for_month -d $${two_month_earlier}
+	$$toutsurmoneau -e daily_for_month -d $${two_month_earlier}
 test: testlegacy testasync
 	python3 --version
 	. private/env.sh && $$toutsurmoneau -h

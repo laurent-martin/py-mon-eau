@@ -18,6 +18,7 @@ ignoreWords:
   - tsme
   - domoticz
   - ooii
+  - aiohttp
 import: []
 enableFiletypes:
   - shellscript
