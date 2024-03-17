@@ -45,7 +45,9 @@ class AsyncClient():
     Retrieve subscriber and meter information from Suez on toutsurmoneau.fr
     '''
 
-    def __init__(self, username: str, password: str, meter_id: Optional[str] = None, url: Optional[str] = None, session: Optional[aiohttp.ClientSession] = None, use_litre: bool = True) -> None:
+    def __init__(self, username: str, password: str, meter_id: Optional[str] = None,
+                 url: Optional[str] = None, session: Optional[aiohttp.ClientSession] = None,
+                 use_litre: bool = True) -> None:
         '''
         Initialize the client object but no network connection is made.
 
@@ -98,7 +100,7 @@ class AsyncClient():
         :returns: volume converted from API (m3) to desired unit (m3 or litre)
         '''
         if self._use_litre:
-            return int(1000*volume_m3)
+            return int(1000 * volume_m3)
         else:
             return volume_m3
 
@@ -114,14 +116,12 @@ class AsyncClient():
         Clear login cookie to force logout and login next time.
         '''
         if self._client_session is not None:
-            self._client_session.cookie_jar.clear_domain(
-                urlparse(self._api_base_url).netloc)
+            self._client_session.cookie_jar.clear_domain(urlparse(self._api_base_url).netloc)
 
     def _dump_cookie_jar(self, jar) -> None:
         _LOGGER.debug('Cookie jar:')
         for cookie in jar:
-            _LOGGER.debug(f'Domain: %s, Name: %s = %s', cookie['domain'],
-                          cookie.key, cookie.value)
+            _LOGGER.debug(f'Domain: %s, Name: %s = %s', cookie['domain'], cookie.key, cookie.value)
 
     def _request(self, path: str, data=None, **kwargs: Any) -> aiohttp.ClientResponse:
         '''
@@ -274,10 +274,10 @@ class AsyncClient():
         monthly = await self._async_call_with_auth(f'{API_ENDPOINT_MONTHLY}/{await self.async_meter_id()}')
         result = {
             'highest_monthly_volume': self._convert_volume(monthly.pop()),
-            'last_year_volume':       self._convert_volume(monthly.pop()),
-            'this_year_volume':       self._convert_volume(monthly.pop()),
-            'monthly':                {},
-            'absolute':               {}
+            'last_year_volume': self._convert_volume(monthly.pop()),
+            'this_year_volume': self._convert_volume(monthly.pop()),
+            'monthly': {},
+            'absolute': {}
         }
         # fill monthly by year and month, we assume values are in date order
         for i in monthly:
@@ -289,7 +289,7 @@ class AsyncClient():
                 if year not in result['monthly']:
                     result['monthly'][year] = {}
                     result['absolute'][year] = {}
-                month_index = 1+MONTHS.index(d[0])
+                month_index = 1 + MONTHS.index(d[0])
                 result['monthly'][year][month_index] = self._convert_volume(i[1])
                 result['absolute'][year][month_index] = self._convert_volume(i[2])
         return result

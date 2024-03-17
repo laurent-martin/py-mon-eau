@@ -1,4 +1,4 @@
-"""Tout sur mon eau module"""
+'''Tout sur mon eau module'''
 from .client import Client
 from .async_client import AsyncClient
 from .errors import ClientError
