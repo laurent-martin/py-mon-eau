@@ -1,6 +1,8 @@
-"""Define package errors."""
+'''Define package errors.'''
 
 
 class ClientError(Exception):
-    """Raised a problem occurs while calling the API"""
+    '''
+    Raised when a problem occurs while calling the API.
+    '''
     pass

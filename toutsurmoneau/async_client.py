@@ -27,36 +27,37 @@ API_ENDPOINT_CONTRACT = 'donnees-contrats'
 # The authentication cookie
 # AUTHENTICATION_COOKIE = 'eZSESSID'
 # regex for token in PAGE_LOGIN (before utf8 encoding)
-# former regex: "_csrf_token" value="([^"]+)"
+# former regex: '_csrf_token" value="([^"]+)'
 CSRF_TOKEN_REGEX = '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u0022'
 # regex for meter id in PAGE_CONSUMPTION
 METER_ID_REGEX = '/month/([0-9]+)'
 # Map french months to its index
 MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
           'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
-# for "last reading" retrieval
+# for retrieval of last reading
 METER_RETRIEVAL_MAX_DAYS_BACK = 5
 # no reading for meter (total is zero means no value available for meter reading)
 METER_NO_VALUE = 0
 
 
 class AsyncClient():
-    """
+    '''
     Retrieve subscriber and meter information from Suez on toutsurmoneau.fr
-    """
+    '''
 
     def __init__(self, username: str, password: str, meter_id: Optional[str] = None, url: Optional[str] = None, session: Optional[aiohttp.ClientSession] = None, use_litre: bool = True) -> None:
-        """
+        '''
         Initialize the client object but no network connection is made.
 
-        @param username account id
-        @param password account password
-        @param meter_id water meter ID (optional)
-        @param url URL of provider, e.g. one of KNOWN_PROVIDER_URLS or other URL of provider.
-        @param session an HTTP session
-        @param use_litre use Litre a unit if True, else use api native unit (cubic meter)
+        :param username: account id
+        :param password: account password
+        :param meter_id: water meter ID (optional)
+        :param url: URL of provider, e.g. one of KNOWN_PROVIDER_URLS or other URL of provider.
+        :param session: an HTTP session
+        :param use_litre: use Litre a unit if True, else use api native unit (cubic meter)
+
         If meter_id is None, it will be read from the web later.
-        """
+        '''
         # store useful parameters
         self._username = username
         self._password = password
@@ -66,70 +67,78 @@ class AsyncClient():
         # base url contains the scheme, address and base path
         if url is None:
             self._provider_url = GENERIC_BASE_URL
-            _LOGGER.debug("Defaulting URL to %s", self._provider_url)
+            _LOGGER.debug('Defaulting URL to %s', self._provider_url)
         else:
             self._provider_url = url
         self._provider_name = self._provider_url
 
     def provider_name(self) -> str:
-        """@return the name of the provider"""
+        '''
+        :returns: the name of the provider
+        '''
         return self._provider_name
 
     def _path_endpoint(self, endpoint: str) -> str:
-        """@return the full path for the specified endpoint"""
-        base_path = f"/{MAIN_PATH}"
+        '''
+        :returns: the full path for the specified endpoint
+        '''
+        base_path = f'/{MAIN_PATH}'
         if endpoint == API_ENDPOINT_CONTRACT:
-            base_path = f"/{PUBLIC_BASE_PATH}"
-        return f"{base_path}/{endpoint}"
+            base_path = f'/{PUBLIC_BASE_PATH}'
+        return f'{base_path}/{endpoint}'
 
     def _full_url(self, endpoint: str) -> str:
-        """@return full URL by concatenating base URL and sub path"""
-        base_url = self._provider_url
-        return f"{base_url}{self._path_endpoint(endpoint)}"
+        '''
+        :returns: full URL by concatenating base URL and sub path
+        '''
+        return f'{self._provider_url}{self._path_endpoint(endpoint)}'
 
-    def _convert_volume(self, volume: float) -> Union[float, int]:
-        """
-        @return volume converted from API (m3) to desired unit (m3 or litre)
-        """
+    def _convert_volume(self, volume_m3: float) -> Union[float, int]:
+        '''
+        :returns: volume converted from API (m3) to desired unit (m3 or litre)
+        '''
         if self._use_litre:
-            return int(1000*volume)
+            return int(1000*volume_m3)
         else:
-            return volume
+            return volume_m3
 
     def _is_valid_absolute(self, value) -> bool:
-        """
-        @param value the absolute volume value on meter
-        @return True if not zero: valid value
-        """
+        '''
+        :param value: the absolute volume value on meter
+        :returns: True if not zero: valid value
+        '''
         return int(value) != METER_NO_VALUE
 
     def ensure_logout(self) -> None:
-        """Clear login cookie to force logout and login next time"""
+        '''
+        Clear login cookie to force logout and login next time.
+        '''
         if self._client_session is not None:
             self._client_session.cookie_jar.clear_domain(
                 urlparse(self._api_base_url).netloc)
 
     def _dump_cookie_jar(self, jar) -> None:
-        _LOGGER.debug("Cookie jar:")
+        _LOGGER.debug('Cookie jar:')
         for cookie in jar:
-            _LOGGER.debug(f"Domain: %s, Name: %s = %s", cookie['domain'],
+            _LOGGER.debug(f'Domain: %s, Name: %s = %s', cookie['domain'],
                           cookie.key, cookie.value)
 
     def _request(self, path: str, data=None, **kwargs: Any) -> aiohttp.ClientResponse:
-        """Create a request context manager depending on presence of data: get or post
+        '''
+        Create a request context manager depending on presence of data: get or post
 
         If no session exists, create one
-        """
+        '''
         if self._client_session is None:
             self._client_session = aiohttp.ClientSession()
         self._dump_cookie_jar(self._client_session.cookie_jar)
-        _LOGGER.debug("=====================================================")
+        _LOGGER.debug('=====================================================')
         full_url = self._full_url(path)
         method = 'get'
         if data is not None:
             method = 'post'
-            _LOGGER.debug("Data: %s", data)
-        _LOGGER.debug("Accessing: %s %s", method, full_url)
+            _LOGGER.debug('Data: %s', data)
+        _LOGGER.debug('Accessing: %s %s', method, full_url)
         return self._client_session.request(
             method=method,
             url=full_url,
@@ -137,67 +146,65 @@ class AsyncClient():
             **kwargs)
 
     def _validate_response(self, response: aiohttp.ClientResponse, success_code=200) -> None:
-        """
+        '''
         Validate the response, raise an exception if not successful.
-        """
-        _LOGGER.debug("Request Cookie: %s",
-                      response.request_info.headers.get("Cookie"))
-        _LOGGER.debug("Response: %s", response)
+        '''
+        _LOGGER.debug('Request Cookie: %s', response.request_info.headers.get('Cookie'))
+        _LOGGER.debug('Response: %s', response)
         for cookie in response.cookies:
-            _LOGGER.debug("Response Cookie: %s", cookie)
+            _LOGGER.debug('Response Cookie: %s', cookie)
         if response.status != success_code:
             response.raise_for_status()
-            raise ClientError(
-                f'HTTP error {response.status} for {response.url}')
+            raise ClientError(f'HTTP error {response.status} for {response.url}')
 
     def _find_in_text(self, text: str, reg_ex: str) -> str:
-        """Find the specified regex in the text and return the first group."""
+        '''
+        Find the specified regex in the text and return the first group.
+        '''
         # get expected regex from page
         matches = re.compile(reg_ex).search(text)
         if matches is None:
-            raise ClientError(f"Could not find {reg_ex} in page")
+            raise ClientError(f'Could not find {reg_ex} in page')
         result = matches.group(1)
         return result
 
     async def _async_call_with_auth(self, endpoint, decode: bool = True) -> Union[dict, str]:
-        """Call the specified endpoint ensuring authentication.
+        '''
+        Call the specified endpoint ensuring authentication.
 
-        @param endpoint the endpoint to call
-        @param decode if True, decode the result as JSON
+        :param endpoint: the endpoint to call
+        :param decode: if True, decode the result as JSON
 
-        @return the dict of result, or page
-        """
-        _LOGGER.debug("Calling with auth: %s", endpoint)
+        :returns: the dict of result, or page
+        '''
+        _LOGGER.debug('Calling with auth: %s', endpoint)
         # if first attempt fails, login, then try again
         for attempt in range(1, 3):
             async with self._request(path=endpoint) as response:
                 self._validate_response(response)
-                # success !
                 if not response.url.path.endswith(PAGE_LOGIN):
+                    # success !
                     if not decode:
                         return await response.text(encoding='utf-8')
                     if 'application/json' not in response.headers.get('content-type'):
-                        raise ClientError(
-                            'Failed getting data: not JSON content')
+                        raise ClientError('Failed getting data: not JSON content')
                     result = await response.json()
                     if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
                         raise ClientError(f'API returned error: {result[1]}')
-                    _LOGGER.debug("Result: %s", result)
+                    _LOGGER.debug('Result: %s', result)
                     return result
                 # second attempt, after login failed
                 if attempt == 2:
                     raise ClientError(f'Login failed.')
                 # first attempt failed, so try to login
-                _LOGGER.debug(f"Redirected to {
-                              PAGE_LOGIN}, performing login...")
+                _LOGGER.debug(f'Redirected to {PAGE_LOGIN}, performing login...')
                 # step 1: GET login page, retrieve CSRF token
                 csrf_token = None
                 async with self._request(path=PAGE_LOGIN) as response:
                     text = await response.text(encoding='utf-8')
                     csrf_token = self._find_in_text(text, CSRF_TOKEN_REGEX)
-                csrf_token = csrf_token.encode(
-                    'utf-8').decode('unicode-escape')
-                _LOGGER.debug("Token: %s", csrf_token)
+                csrf_token = csrf_token.encode('utf-8').decode('unicode-escape')
+                _LOGGER.debug('Token: %s', csrf_token)
                 # step 2: POST credentials in login page
                 credential_data = {
                     '_csrf_token': csrf_token,
@@ -210,22 +217,24 @@ class AsyncClient():
                     self._validate_response(response)
 
     async def async_meter_id(self) -> str:
-        """Water meter identifier
+        '''
+        Water meter identifier
 
-        @return subscriber's water meter identifier
+        :returns: subscriber's water meter identifier
         If it was not provided in initialization, then it is read from the web site.
-        """
-        if self._id is None or "".__eq__(self._id):
+        '''
+        if self._id is None or ''.__eq__(self._id):
             # Read meter ID
             page = await self._async_call_with_auth(PAGE_CONSUMPTION, False)
             self._id = self._find_in_text(page, METER_ID_REGEX)
         return self._id
 
     async def async_contracts(self, active_only: Optional[bool] = True) -> dict:
-        """List of contracts for the user.
+        '''
+        List of contracts for the user.
 
-        @return the list of contracts associated to the calling user.
-        """
+        :returns: the list of contracts associated to the calling user.
+        '''
         contract_list = await self._async_call_with_auth(API_ENDPOINT_CONTRACT)
         for contract in contract_list:
             # remove keys not used
@@ -237,16 +246,14 @@ class AsyncClient():
         return contract_list
 
     async def async_daily_for_month(self, report_date: datetime.date) -> dict:
-        """
-        @param report_date [datetime.date] specify year/month for report, e.g. built with Date.new(year,month,1)
-        @return [dict] [day_in_month]={day:, total:} daily usage for the specified month
+        '''
+        :param report_date: specify year/month for report, e.g. built with Date.new(year,month,1)
+        :returns: [day_in_month]={day:, total:} daily usage for the specified month
         raise an exception if there is no data for that date
-        """
+        '''
         if not isinstance(report_date, datetime.date):
-            raise ClientError(
-                'Coding error: Provide a date object for report_date')
-        daily = await self._async_call_with_auth(
-            f"{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{await self.async_meter_id()}")
+            raise ClientError('Coding error: Provide a date object for report_date')
+        daily = await self._async_call_with_auth(f'{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{await self.async_meter_id()}')
         # since the month is known, keep only day in result (avoid redundant information)
         result = {
             'daily': {},
@@ -254,19 +261,17 @@ class AsyncClient():
         }
         for i in daily:
             if self._is_valid_absolute(i[2]):
-                day_index = int(
-                    datetime.datetime.strptime(i[0], '%d/%m/%Y').day)
+                day_index = int(datetime.datetime.strptime(i[0], '%d/%m/%Y').day)
                 result['daily'][day_index] = self._convert_volume(i[1])
                 result['absolute'][day_index] = self._convert_volume(i[2])
-        _LOGGER.debug("daily_for_month: %s", result)
+        _LOGGER.debug('daily_for_month: %s', result)
         return result
 
     async def async_monthly_recent(self) -> dict:
-        """
-        @return [Hash] current month
-        """
-        monthly = await self._async_call_with_auth(
-            f"{API_ENDPOINT_MONTHLY}/{await self.async_meter_id()}")
+        '''
+        :returns: [Hash] current month
+        '''
+        monthly = await self._async_call_with_auth(f'{API_ENDPOINT_MONTHLY}/{await self.async_meter_id()}')
         result = {
             'highest_monthly_volume': self._convert_volume(monthly.pop()),
             'last_year_volume':       self._convert_volume(monthly.pop()),
@@ -278,48 +283,45 @@ class AsyncClient():
         for i in monthly:
             # skip values in the future... (meter value is set to zero if there is no reading for future values)
             if self._is_valid_absolute(i[2]):
-                # date is "Month Year"
+                # date is 'Month Year'
                 d = i[3].split(' ')
                 year = int(d[1])
                 if year not in result['monthly']:
                     result['monthly'][year] = {}
                     result['absolute'][year] = {}
                 month_index = 1+MONTHS.index(d[0])
-                result['monthly'][year][month_index] = self._convert_volume(
-                    i[1])
-                result['absolute'][year][month_index] = self._convert_volume(
-                    i[2])
+                result['monthly'][year][month_index] = self._convert_volume(i[1])
+                result['absolute'][year][month_index] = self._convert_volume(i[2])
         return result
 
     async def async_latest_meter_reading(self, what='absolute', month_data=None) -> Union[float, int]:
-        """
-        @return the latest meter reading
-        """
+        '''
+        :returns: the latest meter reading
+        '''
         reading_date = datetime.date.today()
         # latest available value may be yesterday or the day before
         for _ in range(METER_RETRIEVAL_MAX_DAYS_BACK):
             test_day = reading_date.day
-            _LOGGER.debug("Trying day: %d", test_day)
+            _LOGGER.debug('Trying day: %d', test_day)
             try:
                 if month_data is None:
                     month_data = await self.async_daily_for_month(reading_date)
                 if test_day in month_data[what]:
                     return {'date': reading_date, 'volume': month_data[what][test_day]}
             except Exception as error:
-                _LOGGER.debug("Error getting month data: %s", error)
+                _LOGGER.debug('Error getting month data: %s', error)
             reading_date = reading_date - datetime.timedelta(days=1)
             if reading_date.day > test_day:
                 month_data = None
-        raise ClientError(
-            f"Cannot get latest meter value in last {METER_RETRIEVAL_MAX_DAYS_BACK} days")
+        raise ClientError(f'Cannot get latest meter value in the last {METER_RETRIEVAL_MAX_DAYS_BACK} days')
 
     async def async_check_credentials(self) -> bool:
-        """
-        @return True if credentials are valid
-        """
+        '''
+        :returns: True if credentials are valid
+        '''
         try:
             await self.async_contracts()
             return True
         except Exception as error:
-            _LOGGER.debug("Login failed: %s", error)
+            _LOGGER.debug('Login failed: %s', error)
             return False

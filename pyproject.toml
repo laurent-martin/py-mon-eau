@@ -38,4 +38,15 @@ push = true
 "toutsurmoneau/__init__.py" = ['^__version__ = "{version}"$']
 
 [tool.setuptools.packages.find]
-exclude = ["private"]  # exclude packages matching these glob patterns (empty by default)
+exclude = [
+  "private",
+] # exclude packages matching these glob patterns (empty by default)
+
+[tool.autopep8]
+max-line-length = 120
+indent-size = 4
+#in-place = true
+#recursive = true
+aggressive = 1
+
+

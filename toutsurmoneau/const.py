@@ -1,6 +1,7 @@
-# Known providers, give the base url, other can be added
+# Known providers.
+# Base url only.
 # https://d13qcyivyon4xf.cloudfront.net/assistant/v1/Suez_LDEF/LivingActorProject/resources/local_v24.js
-# First one shall be the generic www.toutsurmoneau.fr
+# curl -s 'https://d13qcyivyon4xf.cloudfront.net/assistant/v1/Suez_LDEF/LivingActorProject/resources/local_v24.js'|grep "JeMeConnecte'"|sed "s/.*': *'h/h/"|sort -u
 KNOWN_PROVIDER_URLS = [
     "https://www.toutsurmoneau.fr",
     "https://assainissement.eaudetoulousemetropole.fr",
