@@ -110,6 +110,7 @@ async def async_execute(args) -> dict:
                 test_date = datetime.datetime.strptime(args.data, '%Y%m').date()
             data = await client.async_daily_for_month(test_date)
         else:
+            _LOGGER.error(f'Use one of: {", ".join(COMMANDS)}')
             raise Exception(f'No such command: {args.execute}')
         return data
 

@@ -6,11 +6,11 @@
   "configurations": [
     {
       "name": "Test tout sur mon eau",
-      "type": "python",
+      "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/toutsurmoneau/__main__.py",
       "cwd": "${workspaceFolder}",
-      "args": ["--debug", "-u", "${env:U}", "-p", "${env:P}"],
+      "args": ["--debug", "-U", "${env:R}", "-u", "${env:U}", "-p", "${env:P}", "-e", "meter_id"],
       "stopOnEntry": false,
       "justMyCode": false,
       "envFile": "${workspaceFolder}/private/env.sh",
