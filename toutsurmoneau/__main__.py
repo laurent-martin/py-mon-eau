@@ -17,14 +17,22 @@ COMMANDS = [
     'check_credentials'
 ]
 
-
 def command_line() -> None:
     '''
     Main function for command line
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('-u', '--username', required=True, help='Suez username')
-    parser.add_argument('-p', '--password', required=True, help='Password')
+    parser.add_argument("--config", required=False, help="Path to config file")
+    args, unknown_args = parser.parse_known_args()
+    config = {}
+    if args.config:
+        with open(args.config, 'r') as file:
+            for line in file:
+                if '=' in line and not line.startswith('#'):
+                    key, value = line.strip().split('=', 1)
+                    config[key] = value
+    parser.add_argument('-u', '--username', required=not 'username' in config, help='Suez username')
+    parser.add_argument('-p', '--password', required=not 'password' in config, help='Password')
     parser.add_argument('-c', '--meter_id', required=False, help='Water Meter Id')
     parser.add_argument('-U', '--url', required=False, help='full URL of provider, including mon-compte-en-ligne')
     parser.add_argument('-e', '--execute', required=False, default='check_credentials',
@@ -33,7 +41,10 @@ def command_line() -> None:
                         help='Additional data for the command (e.g. date for daily_for_month)')
     parser.add_argument('--debug', action='store_true', default=False)
     parser.add_argument('--legacy', action='store_true', default=False)
-    args = parser.parse_args()
+    args = parser.parse_args(unknown_args)
+    for key, value in config.items():
+        if not getattr(args, key):
+            setattr(args, key, value)
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)

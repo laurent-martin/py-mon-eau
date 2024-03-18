@@ -10,10 +10,15 @@
       "request": "launch",
       "program": "${workspaceFolder}/toutsurmoneau/__main__.py",
       "cwd": "${workspaceFolder}",
-      "args": ["--debug", "-U", "${env:R}", "-u", "${env:U}", "-p", "${env:P}", "-e", "meter_id"],
+      "args": [
+        "--config",
+        "${workspaceFolder}/private/vars.env",
+        "-e",
+        "meter_id",
+        "--debug"
+      ],
       "stopOnEntry": false,
       "justMyCode": false,
-      "envFile": "${workspaceFolder}/private/env.sh",
       "env": {
         "PYTHONPATH": "${PYTHONPATH}:${workspaceFolder}"
       }
