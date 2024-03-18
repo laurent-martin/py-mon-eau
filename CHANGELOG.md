@@ -2,7 +2,8 @@
 
 * 0.0.25
 
-  * fix formatting (f string cut on 2 lines by autopep8)
+  * fix formatting (f-string cut on 2 lines by autopep8)
+  * add config file option
 
 * 0.0.24
 
