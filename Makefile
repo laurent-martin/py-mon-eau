@@ -43,3 +43,12 @@ clean:
 	rm -fr dist
 	find . -name '*.egg-info' -print0|xargs -0 rm -fr
 	find . -name __pycache__ -print0|xargs -0 rm -fr
+changes:
+	@latest_tag=$$(git describe --tags --abbrev=0);\
+	echo "Changes since [$$latest_tag]";\
+	git log $$latest_tag..HEAD --oneline
+changesv:
+	@v1=0.0.$$(($(V) - 1));\
+	v2=0.0.$(V);\
+	echo "Changes between $$v1..$$v2";\
+	git show $$v1..$$v2 --oneline

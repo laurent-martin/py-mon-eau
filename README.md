@@ -58,4 +58,8 @@ This module was inspired from [pySuez from Ooii](https://github.com/ooii/pySuez)
 
 ## Dev data
 
-Web browser filter: `-nr-data -google -1password -cookiebot -acticdn -xiti -cloudfront -qualtrics`
+Web browser filter:
+
+```text
+-nr-data -google -1password -cookiebot -acticdn -xiti -cloudfront -qualtrics`
+```
