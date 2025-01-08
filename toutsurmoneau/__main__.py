@@ -11,17 +11,19 @@ COMMANDS = [
     'attributes',
     'contracts',
     'meter_id',
+    'meter_list',
     'latest_meter_reading',
     'monthly_recent',
     'daily_for_month',
-    'check_credentials'
+    'check_credentials',
+    'telemetry'
 ]
 
 def command_line() -> None:
     '''
     Main function for command line
     '''
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--config", required=False, help="Path to config file")
     args, unknown_args = parser.parse_known_args()
     config = {}
@@ -41,6 +43,8 @@ def command_line() -> None:
                         help='Additional data for the command (e.g. date for daily_for_month)')
     parser.add_argument('--debug', action='store_true', default=False)
     parser.add_argument('--legacy', action='store_true', default=False)
+    parser.add_argument('-h', '--help', action='help', default=argparse.SUPPRESS,
+                    help='Show this help message and exit')
     args = parser.parse_args(unknown_args)
     for key, value in config.items():
         if not getattr(args, key):
@@ -110,6 +114,8 @@ async def async_execute(args) -> dict:
             data = await client.async_contracts()
         elif args.execute == 'meter_id':
             data = await client.async_meter_id()
+        elif args.execute == 'meter_list':
+            data = await client.async_meter_list()
         elif args.execute == 'latest_meter_reading':
             data = await client.async_latest_meter_reading()
         elif args.execute == 'monthly_recent':
@@ -120,6 +126,13 @@ async def async_execute(args) -> dict:
             else:
                 test_date = datetime.datetime.strptime(args.data, '%Y%m').date()
             data = await client.async_daily_for_month(test_date)
+        elif args.execute == 'telemetry':
+            if args.data is None:
+                raise "Provide <montly>,<begin>,<end>"
+            mode, begin_str, end_str = args.data.split(',')
+            begin = datetime.datetime.strptime(begin_str, "%Y-%m-%d").date()
+            end = datetime.datetime.strptime(end_str, "%Y-%m-%d").date()
+            data = await client.async_telemetry(mode,begin,end)
         else:
             _LOGGER.error(f'Use one of: {", ".join(COMMANDS)}')
             raise Exception(f'No such command: {args.execute}')

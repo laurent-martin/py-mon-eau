@@ -50,15 +50,19 @@ class Client():
             self._async_client._client_session = session
             if check_only:
                 return await self._async_client.async_check_credentials()
-            today = datetime.date.today()
             self.attributes['attribution'] = f"Data provided by {self._async_client.provider_name()}"
             summary = await self._async_client.async_monthly_recent()
             self.attributes['lastYearOverAll'] = summary['last_year_volume']
             self.attributes['thisYearOverAll'] = summary['this_year_volume']
             self.attributes['highestMonthlyConsumption'] = summary['highest_monthly_volume']
             self.attributes['history'] = summary['monthly']
+            today = datetime.date.today()
             self.attributes['thisMonthConsumption'] = await self._async_client.async_daily_for_month(today)
-            self.attributes['previousMonthConsumption'] = await self._async_client.async_daily_for_month(datetime.date(today.year, today.month - 1, 1))
+            if today.month == 1:
+                last_month = datetime.date(today.year - 1, 12, 1)
+            else:
+                last_month = datetime.date(today.year, today.month - 1, 1)
+            self.attributes['previousMonthConsumption'] = await self._async_client.async_daily_for_month(last_month)
             self.state = (await self._async_client.async_latest_meter_reading('daily', self.attributes['thisMonthConsumption']))['volume']
 
     def check_credentials(self) -> bool:

@@ -2,7 +2,7 @@
 
 Version 0.0.25
 
-Get your water meter data from your online Suez account (<www.toutsurmoneau.fr>) as well as other sites using the same interface.
+Get your water meter data from your online Suez account (<www.toutsurmoneau.fr>) as well as other sites managed by Suez and using the same interface.
 
 Two Classes are provided:
 
@@ -58,8 +58,13 @@ This module was inspired from [pySuez from Ooii](https://github.com/ooii/pySuez)
 
 ## Dev data
 
-Web browser filter:
+Open developer tools in browser, and select the network tab.
+Then apply the following filter:
 
 ```text
--nr-data -google -1password -cookiebot -acticdn -xiti -cloudfront -qualtrics`
+-nr-data -google -1password -cookiebot -acticdn -xiti -cloudfront -qualtrics
 ```
+
+## Debugging
+
+As the API is not really public, it changes sometimes, and the module also needs some adjustments.

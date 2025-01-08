@@ -5,32 +5,23 @@ import re
 from typing import Optional, Union, Any
 from urllib.parse import urlparse
 from .errors import ClientError
-from .const import KNOWN_PROVIDER_URLS
 
 _LOGGER = logging.getLogger(__name__)
 # Generic URL of Suez web site
 GENERIC_BASE_URL = 'https://www.toutsurmoneau.fr'
-# public APIs are under this path
-PUBLIC_BASE_PATH = 'public-api/user'
-# web site main path
-MAIN_PATH = 'mon-compte-en-ligne'
 # pages (return some HTML content, not JSON data)
-PAGE_LOGIN = 'je-me-connecte'
-PAGE_DASHBOARD = 'tableau-de-bord'
-PAGE_CONSUMPTION = 'historique-de-consommation-tr'
+PAGE_LOGIN = '/mon-compte-en-ligne/je-me-connecte'
+PAGE_DASHBOARD = '/mon-compte-en-ligne/tableau-de-bord'
 # daily (Jours) : /Y/m/meter_id : Array(JJMMYYY, daily volume, cumulative volume). Volumes: .xxx
-API_ENDPOINT_DAILY = 'statJData'
+API_ENDPOINT_DAILY = '/mon-compte-en-ligne/statJData'
 # monthly (Mois) : /meter_id : Array(mmm. yy, monthly volume, cumulative volume, Mmmmm YYYY)
-API_ENDPOINT_MONTHLY = 'statMData'
+API_ENDPOINT_MONTHLY = '/mon-compte-en-ligne/statMData'
 # list contracts associated with account
-API_ENDPOINT_CONTRACT = 'donnees-contrats'
-# The authentication cookie
-# AUTHENTICATION_COOKIE = 'eZSESSID'
+API_ENDPOINT_CONTRACT = '/public-api/user/donnees-contrats'
+API_ENDPOINT_METER_LIST = '/public-api/cel-consumption/meters-list'
+API_ENDPOINT_TELEMETRY = '/public-api/cel-consumption/telemetry'
 # regex for token in PAGE_LOGIN (before utf8 encoding)
-# former regex: '_csrf_token" value="([^"]+)'
 CSRF_TOKEN_REGEX = '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u0022'
-# regex for meter id in PAGE_CONSUMPTION
-METER_ID_REGEX = '/month/([0-9]+)'
 # Map french months to its index
 MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
           'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
@@ -80,20 +71,11 @@ class AsyncClient():
         '''
         return self._provider_name
 
-    def _path_endpoint(self, endpoint: str) -> str:
-        '''
-        :returns: the full path for the specified endpoint
-        '''
-        base_path = f'/{MAIN_PATH}'
-        if endpoint == API_ENDPOINT_CONTRACT:
-            base_path = f'/{PUBLIC_BASE_PATH}'
-        return f'{base_path}/{endpoint}'
-
     def _full_url(self, endpoint: str) -> str:
         '''
         :returns: full URL by concatenating base URL and sub path
         '''
-        return f'{self._provider_url}{self._path_endpoint(endpoint)}'
+        return f'{self._provider_url}{endpoint}'
 
     def _convert_volume(self, volume_m3: float) -> Union[float, int]:
         '''
@@ -138,6 +120,8 @@ class AsyncClient():
         if data is not None:
             method = 'post'
             _LOGGER.debug('Data: %s', data)
+        if 'params' in kwargs:
+            _LOGGER.debug('Params: %s', kwargs['params'])
         _LOGGER.debug('Accessing: %s %s', method, full_url)
         return self._client_session.request(
             method=method,
@@ -157,18 +141,18 @@ class AsyncClient():
             response.raise_for_status()
             raise ClientError(f'HTTP error {response.status} for {response.url}')
 
-    def _find_in_text(self, text: str, reg_ex: str) -> str:
+    def _find_in_text(self, text: str, reg_ex: str, page: str) -> str:
         '''
         Find the specified regex in the text and return the first group.
         '''
         # get expected regex from page
         matches = re.compile(reg_ex).search(text)
         if matches is None:
-            raise ClientError(f'Could not find {reg_ex} in page')
+            raise ClientError(f'Could not find {reg_ex} in page {page}')
         result = matches.group(1)
         return result
 
-    async def _async_call_with_auth(self, endpoint, decode: bool = True) -> Union[dict, str]:
+    async def _async_call_with_auth(self, endpoint, decode: bool = True, **kwargs: Any) -> Union[dict, str]:
         '''
         Call the specified endpoint ensuring authentication.
 
@@ -180,7 +164,7 @@ class AsyncClient():
         _LOGGER.debug('Calling with auth: %s', endpoint)
         # if first attempt fails, login, then try again
         for attempt in range(1, 3):
-            async with self._request(path=endpoint) as response:
+            async with self._request(path=endpoint, **kwargs) as response:
                 self._validate_response(response)
                 if not response.url.path.endswith(PAGE_LOGIN):
                     # success !
@@ -191,6 +175,10 @@ class AsyncClient():
                     result = await response.json()
                     if isinstance(result, list) and len(result) == 2 and result[0] == 'ERR':
                         raise ClientError(f'API returned error: {result[1]}')
+                    if isinstance(result, dict) and 'content' in result:
+                        if result['content'] == None:
+                            raise ClientError(f'API returned error: {result['message']}')    
+                        result=result['content']
                     _LOGGER.debug('Result: %s', result)
                     return result
                 # second attempt, after login failed
@@ -202,7 +190,7 @@ class AsyncClient():
                 csrf_token = None
                 async with self._request(path=PAGE_LOGIN) as response:
                     text = await response.text(encoding='utf-8')
-                    csrf_token = self._find_in_text(text, CSRF_TOKEN_REGEX)
+                    csrf_token = self._find_in_text(text, CSRF_TOKEN_REGEX, PAGE_LOGIN)
                 csrf_token = csrf_token.encode('utf-8').decode('unicode-escape')
                 _LOGGER.debug('Token: %s', csrf_token)
                 # step 2: POST credentials in login page
@@ -210,11 +198,20 @@ class AsyncClient():
                     '_csrf_token': csrf_token,
                     'tsme_user_login[_username]': self._username,
                     'tsme_user_login[_password]': self._password,
-                    'tsme_user_login[_target_path]': self._path_endpoint(PAGE_DASHBOARD),
+                    'tsme_user_login[_target_path]': PAGE_DASHBOARD,
                 }
                 # cookies are set in the session
                 async with self._request(path=PAGE_LOGIN, data=credential_data, allow_redirects=True) as response:
                     self._validate_response(response)
+
+    async def async_meter_list(self) -> dict:
+        '''
+        List of meters for the user.
+
+        :returns: the list of meters associated to the calling user.
+        '''
+        # ignore keys: code, message
+        return (await self._async_call_with_auth(API_ENDPOINT_METER_LIST))
 
     async def async_meter_id(self) -> str:
         '''
@@ -225,8 +222,10 @@ class AsyncClient():
         '''
         if self._id is None or ''.__eq__(self._id):
             # Read meter ID
-            page = await self._async_call_with_auth(PAGE_CONSUMPTION, False)
-            self._id = self._find_in_text(page, METER_ID_REGEX)
+            meter_list = await self.async_meter_list()
+            if meter_list['nbMeters'] != 1:
+                raise ClientError(f'Unexpected number of meters: {meter_list["nbMeters"]}')
+            self._id = meter_list['clientCompteursPro'][0]['compteursPro'][0]['idPDS']
         return self._id
 
     async def async_contracts(self, active_only: Optional[bool] = True) -> dict:
@@ -266,6 +265,26 @@ class AsyncClient():
                 result['absolute'][day_index] = self._convert_volume(i[2])
         _LOGGER.debug('daily_for_month: %s', result)
         return result
+
+    async def async_telemetry(self, mode: str, date_begin: datetime.date, date_end: datetime.date) -> dict:
+        '''
+        :param mode: monthly or daily
+        :param date_begin: date for start
+        :param date_end: date for stop
+        :returns: measures
+        raise an exception if there is a problem
+        '''
+        if not isinstance(date_begin, datetime.date):
+            raise ClientError('Coding error: Provide a date object for date_begin')
+        if not isinstance(date_end, datetime.date):
+            raise ClientError('Coding error: Provide a date object for date_end')
+        result = await self._async_call_with_auth(API_ENDPOINT_TELEMETRY, params = {
+            "id_PDS":await self.async_meter_id(),
+            "mode": mode,
+            "start_date":date_begin.strftime("%Y-%m-%d"),
+            "end_date":date_end.strftime("%Y-%m-%d"),
+        })
+        return result['measures']
 
     async def async_monthly_recent(self) -> dict:
         '''

@@ -1,5 +1,10 @@
 # Release Notes
 
+* 0.0.26
+
+  * added meter_list and telemetry
+  * fix way of finding PDS (meter id)
+
 * 0.0.25
 
   * fix formatting (f-string cut on 2 lines by autopep8)
