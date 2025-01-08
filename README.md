@@ -68,3 +68,11 @@ Then apply the following filter:
 ## Debugging
 
 As the API is not really public, it changes sometimes, and the module also needs some adjustments.
+
+## Contribution
+
+Release procedure:
+
+```
+
+```

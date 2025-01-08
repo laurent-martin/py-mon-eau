@@ -4,6 +4,7 @@ penv:
 	@echo "source .venv/bin/activate"
 inst:
 	pip3 install $$(sed -n -e 's/dependencies//p' pyproject.toml|tr -d "'[]=,")
+	pip3 install bumpver
 bumpver:
 	bumpver update --patch
 release:
