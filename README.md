@@ -73,6 +73,10 @@ As the API is not really public, it changes sometimes, and the module also needs
 
 Release procedure:
 
-```
-
+```bash
+make inst
+make bumpver
+make release
+source .venv/bin/activate
+make publish
 ```
