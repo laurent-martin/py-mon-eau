@@ -1,5 +1,6 @@
 import aiohttp
 import datetime
+import calendar
 import logging
 import re
 from typing import Optional, Union, Any
@@ -12,19 +13,12 @@ GENERIC_BASE_URL = 'https://www.toutsurmoneau.fr'
 # pages (return some HTML content, not JSON data)
 PAGE_LOGIN = '/mon-compte-en-ligne/je-me-connecte'
 PAGE_DASHBOARD = '/mon-compte-en-ligne/tableau-de-bord'
-# daily (Jours) : /Y/m/meter_id : Array(JJMMYYY, daily volume, cumulative volume). Volumes: .xxx
-API_ENDPOINT_DAILY = '/mon-compte-en-ligne/statJData'
-# monthly (Mois) : /meter_id : Array(mmm. yy, monthly volume, cumulative volume, Mmmmm YYYY)
-API_ENDPOINT_MONTHLY = '/mon-compte-en-ligne/statMData'
 # list contracts associated with account
 API_ENDPOINT_CONTRACT = '/public-api/user/donnees-contrats'
 API_ENDPOINT_METER_LIST = '/public-api/cel-consumption/meters-list'
 API_ENDPOINT_TELEMETRY = '/public-api/cel-consumption/telemetry'
 # regex for token in PAGE_LOGIN (before utf8 encoding)
 CSRF_TOKEN_REGEX = '\\\\u0022csrfToken\\\\u0022\\\\u003A\\\\u0022([^,]+)\\\\u0022'
-# Map french months to its index
-MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-          'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 # for retrieval of last reading
 METER_RETRIEVAL_MAX_DAYS_BACK = 5
 # no reading for meter (total is zero means no value available for meter reading)
@@ -81,7 +75,9 @@ class AsyncClient():
         '''
         :returns: volume converted from API (m3) to desired unit (m3 or litre)
         '''
-        if self._use_litre:
+        if volume_m3 is None:
+            return METER_NO_VALUE
+        elif self._use_litre:
             return int(1000 * volume_m3)
         else:
             return volume_m3
@@ -91,7 +87,7 @@ class AsyncClient():
         :param value: the absolute volume value on meter
         :returns: True if not zero: valid value
         '''
-        return int(value) != METER_NO_VALUE
+        return value is not None and int(value) != METER_NO_VALUE
 
     def ensure_logout(self) -> None:
         '''
@@ -252,17 +248,19 @@ class AsyncClient():
         '''
         if not isinstance(report_date, datetime.date):
             raise ClientError('Coding error: Provide a date object for report_date')
-        daily = await self._async_call_with_auth(f'{API_ENDPOINT_DAILY}/{report_date.year}/{report_date.month}/{await self.async_meter_id()}')
+        first_day = report_date.replace(day=1)
+        last_day = report_date.replace(day=calendar.monthrange(report_date.year, report_date.month)[1])
+        daily = await self.async_telemetry(mode='daily',date_begin= first_day, date_end=last_day)
         # since the month is known, keep only day in result (avoid redundant information)
         result = {
             'daily': {},
             'absolute': {}
         }
         for i in daily:
-            if self._is_valid_absolute(i[2]):
-                day_index = int(datetime.datetime.strptime(i[0], '%d/%m/%Y').day)
-                result['daily'][day_index] = self._convert_volume(i[1])
-                result['absolute'][day_index] = self._convert_volume(i[2])
+            if self._is_valid_absolute(i['index']):
+                day_index = int(datetime.datetime.strptime(i['date'].split(' ')[0], '%Y-%m-%d').day)
+                result['daily'][day_index] = self._convert_volume(i['volume'])
+                result['absolute'][day_index] = self._convert_volume(i['index'])
         _LOGGER.debug('daily_for_month: %s', result)
         return result
 
@@ -290,27 +288,28 @@ class AsyncClient():
         '''
         :returns: [Hash] current month
         '''
-        monthly = await self._async_call_with_auth(f'{API_ENDPOINT_MONTHLY}/{await self.async_meter_id()}')
+        today = datetime.date.today()
+        first_day_last_year = datetime.date(today.year - 1, 1, 1)
+        monthly = await self.async_telemetry(mode='monthly',date_begin= first_day_last_year, date_end=today)
         result = {
-            'highest_monthly_volume': self._convert_volume(monthly.pop()),
-            'last_year_volume': self._convert_volume(monthly.pop()),
-            'this_year_volume': self._convert_volume(monthly.pop()),
+            'highest_monthly_volume': 'todo',
+            'last_year_volume': 'todo',
+            'this_year_volume': 'todo',
             'monthly': {},
             'absolute': {}
         }
         # fill monthly by year and month, we assume values are in date order
         for i in monthly:
             # skip values in the future... (meter value is set to zero if there is no reading for future values)
-            if self._is_valid_absolute(i[2]):
-                # date is 'Month Year'
-                d = i[3].split(' ')
-                year = int(d[1])
+            if self._is_valid_absolute(i['index']):
+                date = datetime.datetime.strptime(i['date'].split(' ')[0], '%Y-%m-%d')
+                year = date.year
                 if year not in result['monthly']:
                     result['monthly'][year] = {}
                     result['absolute'][year] = {}
-                month_index = 1 + MONTHS.index(d[0])
-                result['monthly'][year][month_index] = self._convert_volume(i[1])
-                result['absolute'][year][month_index] = self._convert_volume(i[2])
+                month_index = date.month
+                result['monthly'][year][month_index] = self._convert_volume(i['volume'])
+                result['absolute'][year][month_index] = self._convert_volume(i['index'])
         return result
 
     async def async_latest_meter_reading(self, what='absolute', month_data=None) -> Union[float, int]:

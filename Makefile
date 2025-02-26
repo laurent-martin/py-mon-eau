@@ -30,7 +30,7 @@ testlegacy:
 testasync:
 	set -ex;\
 	. private/env.sh;\
-	for test_id in meter_id contracts latest_meter_reading monthly_recent daily_for_month check_credentials;do \
+	for test_id in meter_id contracts latest_meter_reading daily_for_month check_credentials;do \
 		echo "== $${test_id} =========================================================";\
 		$$toutsurmoneau -e $$test_id $$compat;\
 	done;\

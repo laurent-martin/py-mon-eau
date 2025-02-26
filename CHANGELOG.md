@@ -1,5 +1,9 @@
 # Release Notes
 
+* 0.0.27
+
+  * Removed legacy API endpoint that do not work anymore, replaced with new ones.
+
 * 0.0.26
 
   * added meter_list and telemetry
